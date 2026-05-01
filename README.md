@@ -32,8 +32,7 @@ No need to switch apps.
 
 ## 📡 Real-Time Data (WebSocket)
 
-The app runs a local WebSocket server: ws://localhost:27871
-
+The app runs a local WebSocket server: ```ws://localhost:27871```
 
 It streams real-time JSON data including:
 
@@ -58,8 +57,7 @@ Perfect for building visualizers or reactive UI elements.
 
 ## 🖼️ Album Art
 
-Available via local HTTP endpoint: http://localhost:27871/album-art
-
+Available via local HTTP endpoint: ```http://localhost:27871/album-art```
 
 ---
 
@@ -120,6 +118,7 @@ Open them directly in your browser while the app is running.
 
 🖼️ Screenshots
 <!-- Add your screenshots here --> <!-- Example: ![Main UI](screenshots/main-ui.png) ![Tray UI](screenshots/tray-ui.png) -->
+
 💡 Use Cases
 Desktop Now Playing widget
 Simple music controller
@@ -127,6 +126,7 @@ Browser-based visualizers
 OBS browser source
 WebSocket API for music data
 Real-time media data streaming
+
 ⚙️ Features
 Lightweight tray application
 Local WebSocket server
@@ -134,6 +134,7 @@ Media control shortcuts
 Dark theme
 Adjustable visualizer interval
 Optional anonymous analytics
+
 🔐 Privacy
 
 This app does not collect personal data.
