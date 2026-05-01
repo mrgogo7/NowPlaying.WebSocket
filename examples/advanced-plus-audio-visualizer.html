@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NowPlaying Advanced Audio Visualizer</title>
+<style>
+  :root{
+    --bg:#070b16;--panel:rgba(18,26,47,.86);--border:rgba(140,170,240,.18);
+    --text:#e5ecff;--muted:#93a4c3;--cyan:#7dd3fc;--purple:#c084fc;--green:#4ade80;
+    --warn:#f59e0b;--err:#f87171;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;min-height:100vh;color:var(--text);font-family:Segoe UI,Arial,sans-serif;
+    background:radial-gradient(circle at top left,rgba(125,211,252,.18),transparent 34%),
+               radial-gradient(circle at bottom right,rgba(192,132,252,.15),transparent 38%),var(--bg);
+  }
+  .wrap{padding:16px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+  .top,.settings,.metrics,.log{grid-column:1/-1}
+  .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  button{border:1px solid var(--border);background:rgba(26,38,66,.9);color:var(--text);padding:7px 12px;border-radius:10px;cursor:pointer}
+  .endpoint{color:var(--warn);font-family:Consolas,monospace;font-size:13px}
+  .status{color:var(--muted);font-size:13px}.ok{color:var(--green)}.err{color:var(--err)}
+  .settings{background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .setting{background:rgba(10,15,30,.76);border:1px solid var(--border);border-radius:14px;padding:12px}
+  .setting label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px}
+  .setting span{color:var(--cyan);font-family:Consolas,monospace}
+  input[type=range]{width:100%;accent-color:var(--cyan)}
+  .hint{color:var(--muted);font-size:11px;line-height:1.35;margin-top:6px}
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .metric,.card{background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:14px;box-shadow:0 18px 45px rgba(0,0,0,.28)}
+  .metric .label{color:var(--muted);font-size:12px}.metric .value{font-size:24px;font-weight:700}
+  .card{min-height:260px;display:flex;flex-direction:column;gap:10px}
+  .card h2{margin:0;font-size:15px}.sub{color:var(--muted);font-size:12px}
+  canvas{width:100%;height:190px;display:block;border-radius:14px;background:rgba(5,9,20,.55)}
+  pre{margin:0;white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:12px;max-height:280px;overflow:auto}
+  @media(max-width:1000px){.wrap{grid-template-columns:1fr}.settings{grid-template-columns:repeat(2,1fr)}.metrics{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:600px){.settings{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <button id="connectBtn">Connect</button>
+    <button id="disconnectBtn">Disconnect</button>
+    <button id="clearBtn">Clear Logs</button>
+    <span class="endpoint">ws://localhost:27871/</span>
+    <span id="wsState" class="status">State: IDLE</span>
+  </div>
+
+  <section class="settings">
+    <div class="setting"><label>Sensitivity <span id="sensitivityValue"></span></label><input id="sensitivity" type="range" min="0.5" max="8" step="0.05" value="2.2"><div class="hint">Genel tepki çarpanı.</div></div>
+    <div class="setting"><label>Auto Gain <span id="autoGainValue"></span></label><input id="autoGain" type="range" min="0" max="1" step="0.01" value="0.75"><div class="hint">Dar gelen şarkılarda aralığı otomatik büyütür.</div></div>
+    <div class="setting"><label>Floor Cut <span id="floorValue"></span></label><input id="floor" type="range" min="0" max="35" step="1" value="8"><div class="hint">Düşük seviye gürültüyü keser.</div></div>
+    <div class="setting"><label>Peak Punch <span id="punchValue"></span></label><input id="punch" type="range" min="0" max="3" step="0.05" value="1.15"><div class="hint">Ani vuruşları görselde büyütür.</div></div>
+
+    <div class="setting"><label>Response Curve <span id="curveValue"></span></label><input id="curve" type="range" min="0.25" max="1.8" step="0.01" value="0.58"><div class="hint">Düşük değer küçük farkları büyütür.</div></div>
+    <div class="setting"><label>Attack <span id="attackValue"></span></label><input id="attack" type="range" min="0.05" max="0.85" step="0.01" value="0.42"><div class="hint">Yükselirken tepki hızı.</div></div>
+    <div class="setting"><label>Release <span id="releaseValue"></span></label><input id="release" type="range" min="0.02" max="0.45" step="0.01" value="0.12"><div class="hint">Düşerken sönme hızı.</div></div>
+    <div class="setting"><label>Bass Boost <span id="bassBoostValue"></span></label><input id="bassBoost" type="range" min="0.5" max="5" step="0.05" value="1.6"><div class="hint">Bass ağırlığını artırır.</div></div>
+  </section>
+
+  <div class="metrics">
+    <div class="metric"><div class="label">Volume</div><div class="value" id="volumeValue">0</div></div>
+    <div class="metric"><div class="label">Bass</div><div class="value" id="bassValue">0</div></div>
+    <div class="metric"><div class="label">Mid</div><div class="value" id="midValue">0</div></div>
+    <div class="metric"><div class="label">Treble</div><div class="value" id="trebleValue">0</div></div>
+  </div>
+
+  <section class="card"><h2>Adaptive Bars</h2><div class="sub">Auto Gain + Floor Cut + Peak Punch</div><canvas id="barsCanvas"></canvas></section>
+  <section class="card"><h2>Beat Punch Mirror</h2><div class="sub">Ani vuruşları daha belirgin gösterir</div><canvas id="mirrorCanvas"></canvas></section>
+  <section class="card"><h2>Adaptive Radial</h2><div class="sub">NZXT LCD için genişletilmiş radial spectrum</div><canvas id="radialCanvas"></canvas></section>
+  <section class="card"><h2>Blob / Orb</h2><div class="sub">Bass + peak etkili organic visualizer</div><canvas id="orbCanvas"></canvas></section>
+  <section class="card"><h2>Raw JSON</h2><div class="sub" id="avStatus">Waiting...</div><pre id="audioLog">{}</pre></section>
+  <section class="card log"><h2>Connection Log</h2><pre id="connLog"></pre></section>
+</div>
+
+<script>
+const WS_URL = "ws://localhost:27871/";
+const RECONNECT_MS = 1500;
+
+const canvases = {
+  bars: document.getElementById("barsCanvas"),
+  mirror: document.getElementById("mirrorCanvas"),
+  radial: document.getElementById("radialCanvas"),
+  orb: document.getElementById("orbCanvas")
+};
+
+const ctx = Object.fromEntries(Object.entries(canvases).map(([k,c]) => [k, c.getContext("2d")]));
+
+const inputs = {
+  sensitivity: document.getElementById("sensitivity"),
+  autoGain: document.getElementById("autoGain"),
+  floor: document.getElementById("floor"),
+  punch: document.getElementById("punch"),
+  curve: document.getElementById("curve"),
+  attack: document.getElementById("attack"),
+  release: document.getElementById("release"),
+  bassBoost: document.getElementById("bassBoost")
+};
+
+let ws = null;
+let reconnectTimer = null;
+let manualClose = false;
+let tick = 0;
+
+const latest = {
+  volume: 0,
+  bass: 0,
+  mid: 0,
+  treble: 0,
+  spectrum: Array(10).fill(0)
+};
+
+const smooth = {
+  volume: 0,
+  bass: 0,
+  mid: 0,
+  treble: 0,
+  spectrum: Array(10).fill(0)
+};
+
+const adaptive = {
+  avgPeak: 22,
+  lastValues: Array(10).fill(0)
+};
+
+function s() {
+  return {
+    sensitivity: Number(inputs.sensitivity.value),
+    autoGain: Number(inputs.autoGain.value),
+    floor: Number(inputs.floor.value),
+    punch: Number(inputs.punch.value),
+    curve: Number(inputs.curve.value),
+    attack: Number(inputs.attack.value),
+    release: Number(inputs.release.value),
+    bassBoost: Number(inputs.bassBoost.value)
+  };
+}
+
+function updateLabels() {
+  const v = s();
+  document.getElementById("sensitivityValue").textContent = `${v.sensitivity.toFixed(2)}x`;
+  document.getElementById("autoGainValue").textContent = `${Math.round(v.autoGain * 100)}%`;
+  document.getElementById("floorValue").textContent = v.floor;
+  document.getElementById("punchValue").textContent = `${v.punch.toFixed(2)}x`;
+  document.getElementById("curveValue").textContent = v.curve.toFixed(2);
+  document.getElementById("attackValue").textContent = v.attack.toFixed(2);
+  document.getElementById("releaseValue").textContent = v.release.toFixed(2);
+  document.getElementById("bassBoostValue").textContent = `${v.bassBoost.toFixed(2)}x`;
+}
+
+Object.values(inputs).forEach(i => i.addEventListener("input", updateLabels));
+updateLabels();
+
+function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
+function lerp(a,b,t){return a+(b-a)*t;}
+
+function resizeCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const r = canvas.getBoundingClientRect();
+  const w = Math.max(1, Math.floor(r.width * dpr));
+  const h = Math.max(1, Math.floor(r.height * dpr));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+}
+
+function resizeAll(){Object.values(canvases).forEach(resizeCanvas);}
+window.addEventListener("resize", resizeAll);
+resizeAll();
+
+function appendConn(text, level="normal") {
+  const connLog = document.getElementById("connLog");
+  const wsState = document.getElementById("wsState");
+  connLog.textContent += `[${new Date().toLocaleTimeString()}] ${text}\n`;
+  connLog.scrollTop = connLog.scrollHeight;
+
+  if (level === "ok") {
+    wsState.textContent = "State: CONNECTED";
+    wsState.className = "status ok";
+  } else if (level === "err") {
+    wsState.textContent = "State: ERROR/CLOSED";
+    wsState.className = "status err";
+  } else if (text.startsWith("CONNECTING")) {
+    wsState.textContent = "State: CONNECTING";
+    wsState.className = "status";
+  }
+}
+
+function scheduleReconnect() {
+  if (manualClose || reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, RECONNECT_MS);
+}
+
+function connect() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
+  manualClose = false;
+  appendConn(`CONNECTING -> ${WS_URL}`);
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => appendConn("CONNECTED", "ok");
+  ws.onerror = () => appendConn("ERROR", "err");
+
+  ws.onclose = e => {
+    appendConn(`CLOSED code=${e.code} reason=${e.reason || "-"}`, "err");
+    scheduleReconnect();
+  };
+
+  ws.onmessage = e => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type !== "audioVisualizer") return;
+
+      latest.volume = Number(msg.volume || 0);
+      latest.bass = Number(msg.bass || 0);
+      latest.mid = Number(msg.mid || 0);
+      latest.treble = Number(msg.treble || 0);
+      latest.spectrum = Array.isArray(msg.spectrum)
+        ? msg.spectrum.map(v => Number(v || 0))
+        : latest.spectrum;
+
+      document.getElementById("audioLog").textContent = JSON.stringify(msg, null, 2);
+      document.getElementById("avStatus").textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+      document.getElementById("volumeValue").textContent = latest.volume;
+      document.getElementById("bassValue").textContent = latest.bass;
+      document.getElementById("midValue").textContent = latest.mid;
+      document.getElementById("trebleValue").textContent = latest.treble;
+    } catch {
+      appendConn("Invalid JSON message");
+    }
+  };
+}
+
+function disconnect() {
+  manualClose = true;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (ws) ws.close(1000, "Manual close");
+  ws = null;
+  document.getElementById("wsState").textContent = "State: DISCONNECTED";
+  document.getElementById("wsState").className = "status";
+}
+
+/*
+  Asıl çözüm burada:
+  1) Floor Cut ile taban kesiliyor.
+  2) Adaptive Peak ile şarkının gerçek çalışma aralığı öğreniliyor.
+  3) Auto Gain ile düşük aralık 0-100'e genişletiliyor.
+  4) Curve ile küçük farklar büyütülüyor.
+  5) Peak Punch ile ani yükselişler vurgulanıyor.
+*/
+function adaptiveShape(value, index = 0, bassWeighted = false) {
+  const cfg = s();
+
+  let v = Math.max(0, value - cfg.floor);
+  const livePeak = Math.max(...smooth.spectrum, smooth.bass, smooth.mid, smooth.treble, 1);
+
+  adaptive.avgPeak = lerp(adaptive.avgPeak, livePeak, 0.015);
+
+  const targetPeak = Math.max(8, adaptive.avgPeak - cfg.floor);
+  const autoMultiplier = lerp(1, 100 / targetPeak, cfg.autoGain);
+
+  let normalized = clamp((v * autoMultiplier) / 100, 0, 1);
+  normalized = Math.pow(normalized, cfg.curve);
+
+  let shaped = normalized * 100 * cfg.sensitivity;
+
+  const previous = adaptive.lastValues[index] || 0;
+  const delta = Math.max(0, value - previous);
+  const punch = delta * cfg.punch * 1.8;
+
+  shaped += punch;
+
+  if (bassWeighted) shaped *= cfg.bassBoost;
+
+  adaptive.lastValues[index] = value;
+
+  return clamp(shaped, 0, 100);
+}
+
+function shapedSpectrum() {
+  return smooth.spectrum.map((v, i) => adaptiveShape(v, i, i < 3));
+}
+
+function clear(c, canvas){c.clearRect(0,0,canvas.width,canvas.height);}
+
+function gradient(c, canvas) {
+  const g = c.createLinearGradient(0,0,canvas.width,canvas.height);
+  g.addColorStop(0,"#7dd3fc");
+  g.addColorStop(.5,"#c084fc");
+  g.addColorStop(1,"#4ade80");
+  return g;
+}
+
+function roundRect(c,x,y,w,h,r){
+  c.beginPath();
+  c.moveTo(x+r,y);c.lineTo(x+w-r,y);c.quadraticCurveTo(x+w,y,x+w,y+r);
+  c.lineTo(x+w,y+h-r);c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  c.lineTo(x+r,y+h);c.quadraticCurveTo(x,y+h,x,y+h-r);
+  c.lineTo(x,y+r);c.quadraticCurveTo(x,y,x+r,y);c.closePath();
+}
+
+function drawBars() {
+  const canvas = canvases.bars, c = ctx.bars;
+  clear(c, canvas);
+
+  const v = shapedSpectrum();
+  const gap = canvas.width * 0.018;
+  const bw = (canvas.width - gap * (v.length + 1)) / v.length;
+  const maxH = canvas.height * 0.78;
+  const baseY = canvas.height * 0.88;
+
+  c.fillStyle = gradient(c, canvas);
+  c.shadowColor = "rgba(125,211,252,.6)";
+  c.shadowBlur = 18;
+
+  v.forEach((val,i) => {
+    const h = Math.max(5, val / 100 * maxH);
+    const x = gap + i * (bw + gap);
+    roundRect(c, x, baseY - h, bw, h, Math.min(12, bw / 2));
+    c.fill();
+  });
+
+  c.shadowBlur = 0;
+}
+
+function drawMirror() {
+  const canvas = canvases.mirror, c = ctx.mirror;
+  clear(c, canvas);
+
+  const v = shapedSpectrum();
+  const gap = canvas.width * 0.014;
+  const bw = (canvas.width - gap * (v.length + 1)) / v.length;
+  const centerY = canvas.height / 2;
+  const maxH = canvas.height * 0.40;
+
+  c.fillStyle = gradient(c, canvas);
+  c.shadowColor = "rgba(192,132,252,.55)";
+  c.shadowBlur = 16;
+
+  v.forEach((val,i) => {
+    const h = Math.max(4, val / 100 * maxH);
+    const x = gap + i * (bw + gap);
+    roundRect(c, x, centerY - h, bw, h, 8); c.fill();
+    roundRect(c, x, centerY, bw, h, 8); c.fill();
+  });
+
+  c.shadowBlur = 0;
+}
+
+function drawRadial() {
+  const canvas = canvases.radial, c = ctx.radial;
+  clear(c, canvas);
+
+  const v = shapedSpectrum();
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const baseR = Math.min(canvas.width, canvas.height) * .20;
+  const maxBar = Math.min(canvas.width, canvas.height) * .28;
+
+  c.strokeStyle = "rgba(255,255,255,.08)";
+  c.lineWidth = 2;
+  c.beginPath();
+  c.arc(cx, cy, baseR, 0, Math.PI * 2);
+  c.stroke();
+
+  v.forEach((val,i) => {
+    const a = Math.PI * 2 * i / v.length - Math.PI / 2;
+    const len = 8 + val / 100 * maxBar;
+
+    c.strokeStyle = i % 2 ? "#c084fc" : "#7dd3fc";
+    c.lineWidth = 5;
+    c.lineCap = "round";
+    c.shadowColor = c.strokeStyle;
+    c.shadowBlur = 16;
+
+    c.beginPath();
+    c.moveTo(cx + Math.cos(a) * baseR, cy + Math.sin(a) * baseR);
+    c.lineTo(cx + Math.cos(a) * (baseR + len), cy + Math.sin(a) * (baseR + len));
+    c.stroke();
+  });
+
+  c.shadowBlur = 0;
+}
+
+function drawOrb() {
+  const canvas = canvases.orb, c = ctx.orb;
+  clear(c, canvas);
+
+  const v = shapedSpectrum();
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const baseR = Math.min(canvas.width, canvas.height) * .22;
+
+  c.beginPath();
+
+  for (let i = 0; i <= 140; i++) {
+    const a = Math.PI * 2 * i / 140;
+    const val = v[i % v.length] / 100;
+    const wobble = Math.sin(a * 5 + tick * .045) * 8;
+    const r = baseR + val * 58 + wobble;
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+
+    if (i === 0) c.moveTo(x, y);
+    else c.lineTo(x, y);
+  }
+
+  c.closePath();
+
+  const g = c.createRadialGradient(cx,cy,10,cx,cy,baseR*2.6);
+  g.addColorStop(0,"rgba(125,211,252,.70)");
+  g.addColorStop(.55,"rgba(192,132,252,.28)");
+  g.addColorStop(1,"rgba(74,222,128,.04)");
+
+  c.fillStyle = g;
+  c.strokeStyle = "rgba(125,211,252,.85)";
+  c.lineWidth = 3;
+  c.shadowColor = "#7dd3fc";
+  c.shadowBlur = 22;
+  c.fill();
+  c.stroke();
+  c.shadowBlur = 0;
+}
+
+function animate() {
+  tick++;
+
+  const cfg = s();
+
+  function attackRelease(current, target) {
+    return lerp(current, target, target > current ? cfg.attack : cfg.release);
+  }
+
+  smooth.volume = attackRelease(smooth.volume, latest.volume);
+  smooth.bass = attackRelease(smooth.bass, latest.bass);
+  smooth.mid = attackRelease(smooth.mid, latest.mid);
+  smooth.treble = attackRelease(smooth.treble, latest.treble);
+
+  const len = Math.max(smooth.spectrum.length, latest.spectrum.length);
+  for (let i = 0; i < len; i++) {
+    smooth.spectrum[i] = attackRelease(smooth.spectrum[i] || 0, latest.spectrum[i] || 0);
+  }
+
+  drawBars();
+  drawMirror();
+  drawRadial();
+  drawOrb();
+
+  requestAnimationFrame(animate);
+}
+
+document.getElementById("connectBtn").onclick = connect;
+document.getElementById("disconnectBtn").onclick = disconnect;
+document.getElementById("clearBtn").onclick = () => {
+  document.getElementById("connLog").textContent = "";
+  document.getElementById("audioLog").textContent = "{}";
+  document.getElementById("avStatus").textContent = "Waiting...";
+};
+
+connect();
+animate();
+</script>
+</body>
+</html>

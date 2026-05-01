@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NowPlaying Audio Visualizer Demo</title>
+  <style>
+    :root {
+      --bg: #070b16;
+      --panel: rgba(18, 26, 47, 0.82);
+      --border: rgba(120, 150, 220, 0.18);
+      --text: #e5ecff;
+      --muted: #93a4c3;
+      --ok: #4ade80;
+      --accent: #7dd3fc;
+      --accent2: #c084fc;
+      --warn: #f59e0b;
+      --err: #f87171;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(125, 211, 252, 0.18), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(192, 132, 252, 0.14), transparent 34%),
+        var(--bg);
+      color: var(--text);
+      font-family: Segoe UI, Arial, sans-serif;
+      min-height: 100vh;
+    }
+
+    .wrap {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .controls {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 1px solid var(--border);
+      background: rgba(26, 38, 66, 0.9);
+      color: var(--text);
+      padding: 7px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    button:hover {
+      background: rgba(42, 59, 99, 0.95);
+    }
+
+    .badge {
+      color: var(--warn);
+      font-family: Consolas, monospace;
+      font-size: 13px;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px;
+      min-height: 260px;
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+      backdrop-filter: blur(14px);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 650;
+      letter-spacing: 0.2px;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    canvas {
+      width: 100%;
+      height: 190px;
+      display: block;
+      border-radius: 14px;
+      background: rgba(5, 9, 20, 0.55);
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      grid-column: 1 / -1;
+    }
+
+    .metric {
+      background: rgba(18, 26, 47, 0.72);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px;
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric .value {
+      font-size: 24px;
+      font-weight: 700;
+      margin-top: 3px;
+    }
+
+    .log {
+      grid-column: 1 / -1;
+      min-height: 180px;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.35;
+      overflow: auto;
+      max-height: 280px;
+      color: #cdd8f8;
+    }
+
+    @media (max-width: 900px) {
+      .wrap { grid-template-columns: 1fr; }
+      .controls,
+      .metrics,
+      .log { grid-column: auto; }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="controls">
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn">Disconnect</button>
+      <button id="clearBtn">Clear Logs</button>
+      <span class="badge">ws://localhost:27871/</span>
+      <span id="wsState" class="status">State: IDLE</span>
+    </div>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="label">Volume</div>
+        <div class="value" id="volumeValue">0</div>
+      </div>
+      <div class="metric">
+        <div class="label">Bass</div>
+        <div class="value" id="bassValue">0</div>
+      </div>
+      <div class="metric">
+        <div class="label">Mid</div>
+        <div class="value" id="midValue">0</div>
+      </div>
+      <div class="metric">
+        <div class="label">Treble</div>
+        <div class="value" id="trebleValue">0</div>
+      </div>
+    </div>
+
+    <section class="card">
+      <h2>Bars</h2>
+      <div class="sub">Classic spectrum bars</div>
+      <canvas id="barsCanvas"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>Radial Spectrum</h2>
+      <div class="sub">NZXT LCD için uygun dairesel görünüm</div>
+      <canvas id="radialCanvas"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>Wave</h2>
+      <div class="sub">Smooth line visualizer</div>
+      <canvas id="waveCanvas"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>Dots</h2>
+      <div class="sub">Minimal glowing dots</div>
+      <canvas id="dotsCanvas"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>Pulse Circle</h2>
+      <div class="sub">Bass / mid / treble değerleriyle nefes alan daire</div>
+      <canvas id="pulseCanvas"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>Raw audioVisualizer JSON</h2>
+      <div class="sub" id="avStatus">Waiting...</div>
+      <pre id="audioLog">{}</pre>
+    </section>
+
+    <section class="card log">
+      <h2>Connection Log</h2>
+      <pre id="connLog"></pre>
+    </section>
+  </div>
+
+  <script>
+    const WS_URL = "ws://localhost:27871/";
+    const RECONNECT_MS = 1500;
+
+    const canvases = {
+      bars: document.getElementById("barsCanvas"),
+      radial: document.getElementById("radialCanvas"),
+      wave: document.getElementById("waveCanvas"),
+      dots: document.getElementById("dotsCanvas"),
+      pulse: document.getElementById("pulseCanvas")
+    };
+
+    const ctx = Object.fromEntries(
+      Object.entries(canvases).map(([key, canvas]) => [key, canvas.getContext("2d")])
+    );
+
+    const wsState = document.getElementById("wsState");
+    const connLog = document.getElementById("connLog");
+    const audioLog = document.getElementById("audioLog");
+    const avStatus = document.getElementById("avStatus");
+
+    const volumeValue = document.getElementById("volumeValue");
+    const bassValue = document.getElementById("bassValue");
+    const midValue = document.getElementById("midValue");
+    const trebleValue = document.getElementById("trebleValue");
+
+    let ws = null;
+    let reconnectTimer = null;
+    let manualClose = false;
+
+    const latest = {
+      volume: 0,
+      bass: 0,
+      mid: 0,
+      treble: 0,
+      spectrum: Array(10).fill(0)
+    };
+
+    const smooth = {
+      volume: 0,
+      bass: 0,
+      mid: 0,
+      treble: 0,
+      spectrum: Array(10).fill(0)
+    };
+
+    function resizeCanvas(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+
+      const width = Math.max(1, Math.floor(rect.width * dpr));
+      const height = Math.max(1, Math.floor(rect.height * dpr));
+
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+    }
+
+    function resizeAll() {
+      Object.values(canvases).forEach(resizeCanvas);
+    }
+
+    window.addEventListener("resize", resizeAll);
+    resizeAll();
+
+    function appendConn(text, level = "normal") {
+      connLog.textContent += `[${new Date().toLocaleTimeString()}] ${text}\n`;
+      connLog.scrollTop = connLog.scrollHeight;
+
+      if (level === "ok") {
+        wsState.textContent = "State: CONNECTED";
+        wsState.className = "status ok";
+      } else if (level === "err") {
+        wsState.textContent = "State: ERROR/CLOSED";
+        wsState.className = "status err";
+      } else if (text.startsWith("CONNECTING")) {
+        wsState.textContent = "State: CONNECTING";
+        wsState.className = "status";
+      }
+    }
+
+    function scheduleReconnect() {
+      if (manualClose || reconnectTimer) return;
+
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, RECONNECT_MS);
+    }
+
+    function connect() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
+      manualClose = false;
+      appendConn(`CONNECTING -> ${WS_URL}`);
+      ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => appendConn("CONNECTED", "ok");
+      ws.onerror = () => appendConn("ERROR", "err");
+
+      ws.onclose = (e) => {
+        appendConn(`CLOSED code=${e.code} reason=${e.reason || "-"}`, "err");
+        scheduleReconnect();
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+
+          if (msg.type === "audioVisualizer") {
+            latest.volume = Number(msg.volume || 0);
+            latest.bass = Number(msg.bass || 0);
+            latest.mid = Number(msg.mid || 0);
+            latest.treble = Number(msg.treble || 0);
+            latest.spectrum = Array.isArray(msg.spectrum) ? msg.spectrum.map(Number) : latest.spectrum;
+
+            audioLog.textContent = JSON.stringify(msg, null, 2);
+            avStatus.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+
+            volumeValue.textContent = latest.volume;
+            bassValue.textContent = latest.bass;
+            midValue.textContent = latest.mid;
+            trebleValue.textContent = latest.treble;
+          }
+        } catch {
+          appendConn("Invalid JSON message");
+        }
+      };
+    }
+
+    function disconnect() {
+      manualClose = true;
+
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+
+      if (ws) {
+        ws.close(1000, "Manual close");
+        ws = null;
+      }
+
+      wsState.textContent = "State: DISCONNECTED";
+      wsState.className = "status";
+    }
+
+    function lerp(a, b, t) {
+      return a + (b - a) * t;
+    }
+
+    function clear(context, canvas) {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function makeGradient(context, canvas) {
+      const g = context.createLinearGradient(0, 0, canvas.width, canvas.height);
+      g.addColorStop(0, "#7dd3fc");
+      g.addColorStop(0.5, "#c084fc");
+      g.addColorStop(1, "#4ade80");
+      return g;
+    }
+
+    function drawBars() {
+      const canvas = canvases.bars;
+      const c = ctx.bars;
+      clear(c, canvas);
+
+      const values = smooth.spectrum;
+      const gap = canvas.width * 0.018;
+      const barWidth = (canvas.width - gap * (values.length + 1)) / values.length;
+      const maxHeight = canvas.height * 0.78;
+      const baseY = canvas.height * 0.88;
+
+      c.fillStyle = makeGradient(c, canvas);
+      c.shadowColor = "rgba(125, 211, 252, 0.55)";
+      c.shadowBlur = 18;
+
+      values.forEach((v, i) => {
+        const normalized = Math.min(1, v / 100);
+        const h = Math.max(6, normalized * maxHeight);
+        const x = gap + i * (barWidth + gap);
+        const y = baseY - h;
+        const r = Math.min(12, barWidth / 2);
+
+        roundRect(c, x, y, barWidth, h, r);
+        c.fill();
+      });
+
+      c.shadowBlur = 0;
+    }
+
+    function drawRadial() {
+      const canvas = canvases.radial;
+      const c = ctx.radial;
+      clear(c, canvas);
+
+      const values = smooth.spectrum;
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const baseRadius = Math.min(canvas.width, canvas.height) * 0.22;
+      const maxBar = Math.min(canvas.width, canvas.height) * 0.2;
+
+      c.lineCap = "round";
+      c.strokeStyle = "rgba(255,255,255,0.08)";
+      c.lineWidth = 2;
+
+      c.beginPath();
+      c.arc(cx, cy, baseRadius, 0, Math.PI * 2);
+      c.stroke();
+
+      values.forEach((v, i) => {
+        const angle = (Math.PI * 2 * i) / values.length - Math.PI / 2;
+        const normalized = Math.min(1, v / 100);
+        const length = 10 + normalized * maxBar;
+
+        const x1 = cx + Math.cos(angle) * baseRadius;
+        const y1 = cy + Math.sin(angle) * baseRadius;
+        const x2 = cx + Math.cos(angle) * (baseRadius + length);
+        const y2 = cy + Math.sin(angle) * (baseRadius + length);
+
+        c.strokeStyle = i % 2 === 0 ? "#7dd3fc" : "#c084fc";
+        c.lineWidth = 5;
+        c.shadowColor = c.strokeStyle;
+        c.shadowBlur = 14;
+
+        c.beginPath();
+        c.moveTo(x1, y1);
+        c.lineTo(x2, y2);
+        c.stroke();
+      });
+
+      c.shadowBlur = 0;
+
+      const pulse = Math.min(1, smooth.volume / 100);
+      c.fillStyle = `rgba(125, 211, 252, ${0.12 + pulse * 0.18})`;
+      c.beginPath();
+      c.arc(cx, cy, baseRadius * (0.58 + pulse * 0.08), 0, Math.PI * 2);
+      c.fill();
+    }
+
+    function drawWave() {
+      const canvas = canvases.wave;
+      const c = ctx.wave;
+      clear(c, canvas);
+
+      const values = smooth.spectrum;
+      const midY = canvas.height / 2;
+      const padding = canvas.width * 0.08;
+      const usableW = canvas.width - padding * 2;
+
+      c.lineWidth = 4;
+      c.lineCap = "round";
+      c.lineJoin = "round";
+      c.strokeStyle = makeGradient(c, canvas);
+      c.shadowColor = "rgba(192, 132, 252, 0.5)";
+      c.shadowBlur = 18;
+
+      c.beginPath();
+
+      values.forEach((v, i) => {
+        const x = padding + (usableW * i) / (values.length - 1);
+        const y = midY - (v / 100) * canvas.height * 0.36;
+
+        if (i === 0) {
+          c.moveTo(x, y);
+        } else {
+          const prevX = padding + (usableW * (i - 1)) / (values.length - 1);
+          const prevY = midY - (values[i - 1] / 100) * canvas.height * 0.36;
+          const cpX = (prevX + x) / 2;
+
+          c.bezierCurveTo(cpX, prevY, cpX, y, x, y);
+        }
+      });
+
+      c.stroke();
+      c.shadowBlur = 0;
+
+      c.strokeStyle = "rgba(255,255,255,0.08)";
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(padding, midY);
+      c.lineTo(canvas.width - padding, midY);
+      c.stroke();
+    }
+
+    function drawDots() {
+      const canvas = canvases.dots;
+      const c = ctx.dots;
+      clear(c, canvas);
+
+      const values = smooth.spectrum;
+      const padding = canvas.width * 0.08;
+      const usableW = canvas.width - padding * 2;
+
+      values.forEach((v, i) => {
+        const normalized = Math.min(1, v / 100);
+        const x = padding + (usableW * i) / Math.max(1, values.length - 1);
+        const y = canvas.height * 0.78 - normalized * canvas.height * 0.55;
+        const radius = 5 + normalized * 18;
+
+        c.fillStyle = i % 2 === 0 ? "#7dd3fc" : "#c084fc";
+        c.shadowColor = c.fillStyle;
+        c.shadowBlur = 18;
+
+        c.beginPath();
+        c.arc(x, y, radius, 0, Math.PI * 2);
+        c.fill();
+      });
+
+      c.shadowBlur = 0;
+    }
+
+    function drawPulse() {
+      const canvas = canvases.pulse;
+      const c = ctx.pulse;
+      clear(c, canvas);
+
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const minSide = Math.min(canvas.width, canvas.height);
+
+      const bassR = minSide * (0.17 + smooth.bass / 100 * 0.12);
+      const midR = minSide * (0.23 + smooth.mid / 100 * 0.09);
+      const trebleR = minSide * (0.29 + smooth.treble / 100 * 0.07);
+
+      drawCircle(c, cx, cy, trebleR, "rgba(192,132,252,0.18)", "rgba(192,132,252,0.7)");
+      drawCircle(c, cx, cy, midR, "rgba(125,211,252,0.18)", "rgba(125,211,252,0.7)");
+      drawCircle(c, cx, cy, bassR, "rgba(74,222,128,0.22)", "rgba(74,222,128,0.8)");
+
+      c.fillStyle = "#e5ecff";
+      c.font = `${Math.round(minSide * 0.08)}px Segoe UI`;
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      c.fillText(`${Math.round(smooth.volume)}`, cx, cy);
+
+      c.fillStyle = "rgba(229,236,255,0.55)";
+      c.font = `${Math.round(minSide * 0.032)}px Segoe UI`;
+      c.fillText("volume", cx, cy + minSide * 0.07);
+    }
+
+    function drawCircle(c, x, y, r, fill, stroke) {
+      c.fillStyle = fill;
+      c.strokeStyle = stroke;
+      c.lineWidth = 3;
+      c.shadowColor = stroke;
+      c.shadowBlur = 16;
+
+      c.beginPath();
+      c.arc(x, y, r, 0, Math.PI * 2);
+      c.fill();
+      c.stroke();
+
+      c.shadowBlur = 0;
+    }
+
+    function roundRect(c, x, y, w, h, r) {
+      c.beginPath();
+      c.moveTo(x + r, y);
+      c.lineTo(x + w - r, y);
+      c.quadraticCurveTo(x + w, y, x + w, y + r);
+      c.lineTo(x + w, y + h - r);
+      c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      c.lineTo(x + r, y + h);
+      c.quadraticCurveTo(x, y + h, x, y + h - r);
+      c.lineTo(x, y + r);
+      c.quadraticCurveTo(x, y, x + r, y);
+      c.closePath();
+    }
+
+    function animate() {
+      smooth.volume = lerp(smooth.volume, latest.volume, 0.12);
+      smooth.bass = lerp(smooth.bass, latest.bass, 0.12);
+      smooth.mid = lerp(smooth.mid, latest.mid, 0.12);
+      smooth.treble = lerp(smooth.treble, latest.treble, 0.12);
+
+      const len = Math.max(smooth.spectrum.length, latest.spectrum.length);
+
+      for (let i = 0; i < len; i++) {
+        smooth.spectrum[i] = lerp(smooth.spectrum[i] || 0, latest.spectrum[i] || 0, 0.16);
+      }
+
+      drawBars();
+      drawRadial();
+      drawWave();
+      drawDots();
+      drawPulse();
+
+      requestAnimationFrame(animate);
+    }
+
+    document.getElementById("connectBtn").onclick = connect;
+    document.getElementById("disconnectBtn").onclick = disconnect;
+
+    document.getElementById("clearBtn").onclick = () => {
+      connLog.textContent = "";
+      audioLog.textContent = "{}";
+      avStatus.textContent = "Waiting...";
+    };
+
+    connect();
+    animate();
+  </script>
+</body>
+</html>
