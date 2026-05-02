@@ -1,6 +1,6 @@
 {
   "version": "6.4.30",
   "releaseUrl": "https://github.com/mrgogo7/NowPlaying.WebSocket/releases/latest",
-  "showsupportbutton": true,
+  "showsupportbutton": false,
   "supporturl": "https://buymeacoffee.com/mrgogo"
 }
