@@ -1,172 +1,189 @@
 # 🎧 NowPlaying.WebSocket
 
-A lightweight Windows Now Playing app with built-in media controls and a local WebSocket server for real-time JSON data and audio visualization.
+Real-time **Windows Now Playing data** + **Audio Visualizer JSON over WebSocket**
 
-Stream your current media data locally and use it in your own tools, browser apps, or visualizers.
+NowPlaying.WebSocket is a lightweight Windows application that:
 
----
-
-## 🖥️ What is this?
-
-NowPlaying.WebSocket is both:
-
-- A simple Windows media controller  
-- A local WebSocket server for real-time media data  
-
-You can control playback directly from the app, or connect to it from a browser or custom tools to read live JSON data.
+- Streams Now Playing media data  
+- Streams real-time Audio Visualizer data  
+- Exposes everything via local WebSocket (JSON)  
+- Works as a standalone desktop media controller  
 
 ---
 
-## 🎧 Media Controls (Built-in)
+## 🔥 Why this project exists
 
-Control your music directly from the tray/taskbar:
+Most tools can show *Now Playing*.
 
-- Play / Pause  
-- Next / Previous track  
-- Mute audio  
-- Adjust volume (mouse wheel support)  
+Very few provide:
 
-No need to switch apps.
+- Real-time Audio Visualizer data  
+- Clean JSON over WebSocket  
+- Easy integration for browser apps, overlays, or OBS  
 
----
-
-## 📡 Real-Time Data (WebSocket)
-
-The app runs a local WebSocket server: ```ws://localhost:27871```
-
-It streams real-time JSON data including:
-
-- Now playing metadata  
-- Playback state  
-- Timeline (position & duration)  
-- Audio visualization data  
+This app focuses on all of them — together.
 
 ---
 
-## 🔊 Audio Visualization Data
+## ⚡ Core Features
 
-Real-time values for:
+### 🎵 Real-Time Audio Visualizer (WebSocket)
 
-- Volume  
+The main feature.
+
+The app streams live audio analysis data:
+
+- Volume level  
 - Bass / Mid / Treble  
-- Frequency spectrum  
+- Frequency spectrum array  
 
-Perfect for building visualizers or reactive UI elements.
+Perfect for:
+
+- Audio visualizers  
+- Reactive UI  
+- OBS browser sources  
+- Web-based overlays  
+- Stream tools  
+
+📡 Endpoint: `ws://localhost:27871`
 
 ---
 
-## 🖼️ Album Art
+### 🎧 Now Playing Data (Live JSON)
 
-Available via local HTTP endpoint: ```http://localhost:27871/album-art```
+Real-time media information:
+
+- Title  
+- Artist  
+- Album  
+- Playback state  
+- Timeline (position / duration)  
+- Album art URL  
 
 ---
 
-## 📦 Example JSON Output
+### 🔊 Example: Audio Visualizer
 
 ```json
-nowPlaying:
-{
-  "Type": "nowPlaying",
-  "Title": "Thunderstruck",
-  "Artist": "AC/DC",
-  "Album": "The Razors Edge",
-  "Playback": "Playing",
-  "IsPlaying": true,
-  "PositionSec": 7,
-  "DurationSec": 292,
-  "PositionText": "0:07",
-  "DurationText": "4:52",
-  "TimelineVisible": true,
-  "TimelineState": "interpolating",
-  "TimelineReason": "trusted.native.timelineEvent",
-  "AlbumArtUrl": "http://localhost:27871/album-art",
-  "UpdatedAt": "02:01:55"
-}
-
-audioVisualizer:
 {
   "Type": "audioVisualizer",
-  "Volume": 5,
-  "Bass": 8,
-  "Mid": 6,
-  "Treble": 5,
-  "Spectrum": [
-    6,
-    6,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5
-  ],
-  "UpdatedAt": "02:01:55"
+  "Volume": 35,
+  "Bass": 59,
+  "Mid": 43,
+  "Treble": 40,
+  "Spectrum": [50,36,42,40,41,38,37,42,38,41],
+  "UpdatedAt": "21:18:20"
 }
 ```
 
-🌐 Example HTML (WebSocket Client)
+🎵 Example: Now Playing
 
-This repository includes ready-to-use HTML examples that:
+```
+{
+  "Type": "nowPlaying",
+  "Title": "Come Together - Remastered 2009",
+  "Artist": "The Beatles",
+  "Album": "Abbey Road (Remastered)",
+  "Playback": "Playing",
+  "IsPlaying": true,
+  "PositionSec": 74,
+  "DurationSec": 259,
+  "PositionText": "1:14",
+  "DurationText": "4:19",
+  "AlbumArtUrl": "http://localhost:27871/album-art"
+}
+```
 
-Connect to the WebSocket server
-Display now playing data
-Render audio visualizations
+#### 🖥️ Desktop App Features
 
-Open them directly in your browser while the app is running.
+Not just a WebSocket server — a full Windows app.
 
-🖼️ Screenshots
-<!-- Add your screenshots here --> <!-- Example: ![Main UI](screenshots/main-ui.png) ![Tray UI](screenshots/tray-ui.png) -->
+##### 🎮 Media Controls
+- Play / Pause
+- Next / Previous
+- Mute / Unmute
+- Volume control (slider + mouse wheel)
 
-💡 Use Cases
-Desktop Now Playing widget
-Simple music controller
-Browser-based visualizers
-OBS browser source
-WebSocket API for music data
-Real-time media data streaming
+##### 🧩 Smart UI & Tray
+- Tray icon with quick access
+- Click to open flyout panel
+- Lightweight, always accessible
 
-⚙️ Features
-Lightweight tray application
-Local WebSocket server
-Media control shortcuts
-Dark theme
-Adjustable visualizer interval
-Optional anonymous analytics
+##### ✨ Quality of Life
+- Click Title / Artist / Album → copy to clipboard
+- Always on top (optional)
+- Run at startup
+- Start minimized to tray
+- Dark theme
+- Hide tray icon
 
-🔐 Privacy
+##### 🔊 Audio Capture & Devices
++ Automatic loopback capture
++ Manual device selection:
+  + Speakers
+  + Headphones
+  + Microphones (WASAPI)
 
-This app does not collect personal data.
+##### 🎚️ Visualizer Interval
 
-If analytics is enabled:
+Control update speed:
+- Lower = smoother animation
+- Higher = lower CPU usage
 
-Only anonymous usage events are sent
-No track titles, artists, or media content are collected
-No usernames, IP addresses, or system identifiers are collected
+Useful for fine-tuning real-time visualizers.
 
-All data stays on your machine unless analytics is enabled.
+##### 🖼️ Album Art: `http://localhost:27871/album-art`
 
-You can disable analytics at any time.
+Use directly in:
+- `<img>`
+- Canvas apps
+- Overlays
 
-📦 Installation
-Download the latest release
-Run the setup
-Launch the app
-☕ Support
+#### 🌐 Built for Developers
 
-If you find this project useful:
+Designed for:
+- Frontend developers
+- OBS users
+- Stream tool creators
+- Dashboard builders
 
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/mrgogo)
+##### 📂 Examples
 
-⚠️ Notes
-This repository contains only the compiled application
+Inside `/examples`:
+
+- Ready-to-use HTML files
+- WebSocket client demos
+- Audio visualizer examples
+
+Open in browser → works instantly.
+
+##### 💡 Use Cases
+- Audio Visualizer (web)
+- OBS browser source
+- Desktop widgets
+- Music dashboards
+- Stream overlays
+- Web-based music UI
+
+#### 📦 Download
+
+Latest version: `https://raw.githubusercontent.com/mrgogo7/NowPlaying.WebSocket/main/releases/NowPlaying.WebSocket_Setup_v6.4.30.0.exe`
+
+#### 🔐 Privacy
+- No personal data collected
+- No media content sent externally
+- Everything runs locally
+Optional: Anonymous usage analytics (can be disabled)
+
+### ☕ Support
+
+If you find this useful: [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/mrgogo)
+
+##### ⚠️ Notes
+This repository contains compiled application only
 Source code is not included
-📄 License
 
-Free for personal, non-commercial use.
+### 📄 License
 
-Commercial use requires a separate license.
-Please contact the author for commercial licensing.
-
-See the LICENSE file for details.
+Free for personal use.
+Commercial use requires permission.
