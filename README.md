@@ -9,7 +9,23 @@ NowPlaying.WebSocket is a lightweight Windows application that:
 - Exposes everything via local WebSocket (JSON)  
 - Works as a standalone desktop media controller  
 
----
+App Main ScreenShots
+<p align="left">
+  <img src="screenshots/nowplaying-ui-dark.png" width="300"/>
+  <img src="screenshots/nowplaying-ui-light.png" width="300"/>
+</p>
+
+Settings UI
+<p align="left">
+  <img src="screenshots/nowplaying-websocket-settings-ui-dark.png" width="300"/>
+  <img src="screenshots/nowplaying-websocket-settings-ui-light.png" width="300"/>
+</p>
+
+Flyout UI
+<p align="left">
+  <img src="screenshots/nowplaying-flyout-ui-dark.png" width="300"/>
+  <img src="screenshots/nowplaying-flyout-ui-light.png" width="300"/>
+</p>
 
 ## 🔥 Why this project exists
 
@@ -21,7 +37,7 @@ Very few provide:
 - Clean JSON over WebSocket  
 - Easy integration for browser apps, overlays, or OBS  
 
-This app focuses on all of them — together.
+This app focuses on all of them together.
 
 ---
 
@@ -96,7 +112,7 @@ Real-time media information:
 
 #### 🖥️ Desktop App Features
 
-Not just a WebSocket server — a full Windows app.
+Not just a WebSocket server a full Windows app.
 
 ##### 🎮 Media Controls
 - Play / Pause
@@ -147,15 +163,37 @@ Designed for:
 - Stream tool creators
 - Dashboard builders
 
-##### 📂 Examples
+## 🌐 Examples (Ready-to-Use HTML)
 
-Inside `/examples`:
+This repository includes ready-to-use HTML examples that connect to the WebSocket server and visualize real-time data.
 
-- Ready-to-use HTML files
-- WebSocket client demos
-- Audio visualizer examples
+👉 Just open them in your browser while the app is running.
 
-Open in browser → works instantly.
+### 🎵 Basic Now Playing
+
+<p align="left">
+  <img src="screenshots/html-examples-basic-nowplaying.png" width="600"/>
+</p>
+
+- Displays title, artist, album  
+- Shows playback state  
+- Timeline & progress bar  
+- Live JSON stream  
+
+📄 File: [examples/basic-nowplaying.html](https://github.com/mrgogo7/NowPlaying.WebSocket/tree/main/examples "examples/basic-nowplaying.html")
+
+### ⚡ Advanced Audio Visualizer
+
+<p align="left">
+  <img src="screenshots/html-examples-advanced-audio-visualizer.png" width="600"/>
+</p>
+
+- Adaptive bars  
+- Beat punch effect  
+- Radial visualizer  
+- Smoothing & gain control  
+
+📄 File: [examples/advanced-plus-audio-visualizer.html](https://github.com/mrgogo7/NowPlaying.WebSocket/tree/main/examples "examples/advanced-plus-audio-visualizer.html")
 
 ##### 💡 Use Cases
 - Audio Visualizer (web)
