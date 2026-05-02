@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NowPlaying WebSocket Test</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121a2f;
+      --border: #253250;
+      --text: #e5ecff;
+      --muted: #93a4c3;
+      --ok: #4ade80;
+      --warn: #f59e0b;
+      --err: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: Consolas, monospace; }
+    .wrap {
+      padding: 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      min-height: 100vh;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      min-height: 320px;
+    }
+    .title { font-size: 14px; margin-bottom: 8px; color: var(--ok); }
+    .status { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+      line-height: 1.35;
+      overflow: auto;
+      flex: 1;
+    }
+    .controls {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    button {
+      border: 1px solid var(--border);
+      background: #1a2642;
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+    }
+    .badge { color: var(--warn); }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="controls">
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn">Disconnect</button>
+      <button id="clearBtn">Clear Logs</button>
+      <span class="badge" id="endpointText">ws://localhost:27871/</span>
+      <span id="wsState" class="status">State: IDLE</span>
+    </div>
+
+    <section class="panel">
+      <div class="title">nowPlaying</div>
+      <div class="status" id="npStatus">Waiting...</div>
+      <pre id="nowPlayingLog">{}</pre>
+    </section>
+
+    <section class="panel">
+      <div class="title">audioVisualizer</div>
+      <div class="status" id="avStatus">Waiting...</div>
+      <pre id="audioLog">{}</pre>
+    </section>
+
+    <section class="panel" style="grid-column: 1 / -1; min-height: 200px;">
+      <div class="title">Connection Log</div>
+      <pre id="connLog"></pre>
+    </section>
+  </div>
+
+  <script>
+    const WS_URL = "ws://localhost:27871/";
+    const RECONNECT_MS = 1500;
+
+    const nowPlayingLog = document.getElementById("nowPlayingLog");
+    const audioLog = document.getElementById("audioLog");
+    const connLog = document.getElementById("connLog");
+    const npStatus = document.getElementById("npStatus");
+    const avStatus = document.getElementById("avStatus");
+    const clearBtn = document.getElementById("clearBtn");
+    const connectBtn = document.getElementById("connectBtn");
+    const disconnectBtn = document.getElementById("disconnectBtn");
+    const wsState = document.getElementById("wsState");
+
+    let ws = null;
+    let reconnectTimer = null;
+    let manualClose = false;
+
+    function appendConn(text, level = "normal") {
+      const line = `[${new Date().toLocaleTimeString()}] ${text}\n`;
+      connLog.textContent += line;
+      connLog.scrollTop = connLog.scrollHeight;
+
+      if (level === "ok") {
+        wsState.textContent = "State: CONNECTED";
+        wsState.className = "status ok";
+      } else if (level === "err") {
+        wsState.textContent = "State: ERROR/CLOSED";
+        wsState.className = "status err";
+      } else {
+        wsState.textContent = text.startsWith("CONNECTING") ? "State: CONNECTING" : wsState.textContent;
+        wsState.className = "status";
+      }
+    }
+
+    function scheduleReconnect() {
+      if (manualClose) return;
+      if (reconnectTimer) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, RECONNECT_MS);
+    }
+
+    function connect() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
+      manualClose = false;
+      appendConn(`CONNECTING -> ${WS_URL}`);
+      ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => appendConn("CONNECTED", "ok");
+
+      ws.onerror = () => appendConn("ERROR", "err");
+
+      ws.onclose = (e) => {
+        appendConn(`CLOSED code=${e.code} reason=${e.reason || "-"}`, "err");
+        scheduleReconnect();
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+
+          if (msg.type === "nowPlaying") {
+            nowPlayingLog.textContent = JSON.stringify(msg, null, 2);
+            npStatus.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+            return;
+          }
+
+          if (msg.type === "audioVisualizer") {
+            audioLog.textContent = JSON.stringify(msg, null, 2);
+            avStatus.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+            return;
+          }
+
+          appendConn(`Unknown type: ${msg.type ?? "n/a"}`);
+        } catch {
+          appendConn("Invalid JSON message");
+        }
+      };
+    }
+
+    function disconnect() {
+      manualClose = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (ws) {
+        ws.close(1000, "Manual close");
+        ws = null;
+      }
+      wsState.textContent = "State: DISCONNECTED";
+      wsState.className = "status";
+    }
+
+    connectBtn.onclick = connect;
+    disconnectBtn.onclick = disconnect;
+
+    clearBtn.onclick = () => {
+      connLog.textContent = "";
+      nowPlayingLog.textContent = "{}";
+      audioLog.textContent = "{}";
+      npStatus.textContent = "Waiting...";
+      avStatus.textContent = "Waiting...";
+    };
+
+    connect();
+  </script>
+</body>
+</html>
