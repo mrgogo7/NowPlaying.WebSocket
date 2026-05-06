@@ -205,7 +205,7 @@ This repository includes ready-to-use HTML examples that connect to the WebSocke
 
 #### 📦 Download
 
-Latest version: `https://github.com/mrgogo7/NowPlaying.WebSocket/releases/download/v6.4.30/NowPlaying.WebSocket_v6.4.30.0.exe)`
+Latest version: `https://github.com/mrgogo7/NowPlaying.WebSocket/releases/download/v6.4.30/NowPlaying.WebSocket_v6.4.30.0.exe`
 
 #### 🔐 Privacy
 - No personal data collected
