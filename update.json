@@ -1,6 +1,9 @@
 {
-  "version": "6.4.30",
+  "version": "6.8.26",
   "releaseUrl": "https://github.com/mrgogo7/NowPlaying.WebSocket/releases/latest",
+  "setupDownloadUrl": "https://github.com/mrgogo7/NowPlaying.WebSocket/releases/download/v6.8.26/NowPlaying.WebSocket_Setup_v6.8.26.0.exe",
+  "setupSha256": "4BE4601705CA4F63C40D2DC836CDB650036D88EBF6E3EC37F52586BDBEA970BB",
+  "setupSizeBytes": 56505843,
   "updaterequired": false,
   "showsupportbutton": false,
   "supporturl": "https://buymeacoffee.com/mrgogo"
