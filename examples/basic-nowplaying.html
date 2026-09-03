@@ -218,6 +218,7 @@
           <span id="playback" class="pill">Playback: -</span>
           <span id="album" class="pill">Album: -</span>
           <span id="updatedAt" class="pill">Updated: -</span>
+          <span id="schemaBadge" class="pill">schema: -</span>
         </div>
       </div>
     </section>
@@ -270,6 +271,7 @@
     const album = document.getElementById("album");
     const playback = document.getElementById("playback");
     const updatedAt = document.getElementById("updatedAt");
+    const schemaBadge = document.getElementById("schemaBadge");
 
     const positionText = document.getElementById("positionText");
     const durationText = document.getElementById("durationText");
@@ -278,7 +280,8 @@
     let ws = null;
     let reconnectTimer = null;
     let manualClose = false;
-    let lastAlbumArtUrl = "";
+    let lastTrackKey = "";
+    let albumArtVersion = 0;
 
     cover.src = FALLBACK_COVER;
 
@@ -312,91 +315,72 @@
       return String(value);
     }
 
-    // Reads a property with multiple possible casing styles.
-    function read(obj, ...keys) {
-      for (const key of keys) {
-        if (obj && Object.prototype.hasOwnProperty.call(obj, key)) {
-          return obj[key];
-        }
-      }
-
-      return undefined;
+    // "-" is the Client's own per-field "no data" sentinel (see
+    // docs/nzxt-esc-client-reference.md §5) — distinct from an empty string. A field can be "-"
+    // even while isPlaying is true (e.g. album metadata missing on a browser-sourced session).
+    function meaningful(value) {
+      return Boolean(value && value !== "-");
     }
 
-    // Extracts nowPlaying data from different possible message shapes.
-    function extractNowPlaying(message) {
-      // Case 1:
-      // { "Type": "nowPlaying", ... }
-      const directType = read(message, "Type", "type");
-
-      if (directType === "nowPlaying") {
-        return message;
-      }
-
-      // Case 2:
-      // { "nowPlaying": { "Type": "nowPlaying", ... } }
-      const camel = read(message, "nowPlaying");
-
-      if (camel) {
-        return camel;
-      }
-
-      // Case 3:
-      // { "NowPlaying": { "Type": "nowPlaying", ... } }
-      const pascal = read(message, "NowPlaying");
-
-      if (pascal) {
-        return pascal;
-      }
-
-      return null;
-    }
-
-    // Updates the Now Playing UI using the received JSON object.
+    // Updates the Now Playing UI using the received JSON object. Wire fields are read directly
+    // (camelCase only) — the Client and NZXT-ESC ship in lockstep, so no PascalCase/legacy-shape
+    // fallback parsing is needed (see client-reference.md §4/§10).
     function updateNowPlaying(data) {
-      const trackTitle = read(data, "Title", "title");
-      const trackArtist = read(data, "Artist", "artist");
-      const trackAlbum = read(data, "Album", "album");
-      const playbackState = read(data, "Playback", "playback");
-      const isPlaying = read(data, "IsPlaying", "isPlaying");
-      const posSec = Number(read(data, "PositionSec", "positionSec") || 0);
-      const durSec = Number(read(data, "DurationSec", "durationSec") || 0);
-      const posText = read(data, "PositionText", "positionText");
-      const durText = read(data, "DurationText", "durationText");
-      const updated = read(data, "UpdatedAt", "updatedAt");
-      const albumArtUrl = read(data, "AlbumArtUrl", "albumArtUrl");
+      const trackTitle = data.title;
+      const trackArtist = data.artist;
+      const trackAlbum = data.album;
+      const playbackState = data.playback;
+      const isPlaying = data.isPlaying === true;
+      const posSec = Number(data.positionSec || 0);
+      const durSec = Number(data.durationSec || 0);
+      const posText = data.positionText;
+      const durText = data.durationText;
+      const updated = data.updatedAt;
+      const albumArtUrl = data.albumArtUrl;
+      const timelineVisible = data.timelineVisible === true;
 
-      title.textContent = safeText(trackTitle, "Unknown Title");
-      artist.textContent = safeText(trackArtist, "Unknown Artist");
-      album.textContent = `Album: ${safeText(trackAlbum)}`;
+      title.textContent = meaningful(trackTitle) ? trackTitle : "Nothing playing";
+      artist.textContent = meaningful(trackArtist) ? trackArtist : "-";
+      album.textContent = `Album: ${meaningful(trackAlbum) ? trackAlbum : "-"}`;
       playback.textContent = `Playback: ${safeText(playbackState)}`;
       updatedAt.textContent = `Updated: ${safeText(updated)}`;
+      schemaBadge.textContent = `schema: v${data.schemaVersion ?? "?"} (${safeText(data.appVersion)})`;
 
       playback.className = "pill";
 
-      if (isPlaying === true || playbackState === "Playing") {
+      if (isPlaying) {
         playback.classList.add("ok");
       }
 
-      positionText.textContent = safeText(posText, "0:00");
-      durationText.textContent = safeText(durText, "0:00");
-
-      const percent = durSec > 0
-        ? Math.min(100, Math.max(0, (posSec / durSec) * 100))
-        : 0;
-
-      progressBar.style.width = `${percent}%`;
-
-      // Only update the image source when the album art URL changes.
-      // This prevents unnecessary image reloads on every WebSocket message.
-      if (albumArtUrl && albumArtUrl !== lastAlbumArtUrl) {
-        lastAlbumArtUrl = albumArtUrl;
-        cover.src = albumArtUrl;
+      // positionSec/durationSec/positionText/durationText are only meaningful while
+      // timelineVisible is true — the Client blanks them (0 / "-") otherwise rather than freezing
+      // the last real values (client-reference.md §5.1). Don't show a stale "0:00" as if it were
+      // real data.
+      if (timelineVisible) {
+        positionText.textContent = safeText(posText, "0:00");
+        durationText.textContent = safeText(durText, "0:00");
+        const percent = durSec > 0
+          ? Math.min(100, Math.max(0, (posSec / durSec) * 100))
+          : 0;
+        progressBar.style.width = `${percent}%`;
+      } else {
+        positionText.textContent = "-";
+        durationText.textContent = "-";
+        progressBar.style.width = "0%";
       }
 
-      if (!albumArtUrl) {
-        lastAlbumArtUrl = "";
+      // albumArtUrl is a constant URL (client-reference.md §2/§5) — its string value never
+      // changes between tracks, so re-assigning it as-is would never actually reload the <img>.
+      // Cache-bust with a bumped version param whenever the track identity changes, and only
+      // when it changes (avoid unnecessary reloads on every WebSocket message).
+      const trackKey = `${trackTitle}|${trackArtist}|${trackAlbum}`;
+      if (!meaningful(albumArtUrl)) {
+        lastTrackKey = "";
         cover.src = FALLBACK_COVER;
+      } else if (trackKey !== lastTrackKey) {
+        lastTrackKey = trackKey;
+        albumArtVersion++;
+        cover.src = `${albumArtUrl}?v=${albumArtVersion}`;
       }
     }
 
@@ -425,14 +409,12 @@
           // Show the raw received message for debugging.
           logOutput.textContent = JSON.stringify(message, null, 2);
 
-          const nowPlaying = extractNowPlaying(message);
-
-          if (!nowPlaying) {
+          if (message.type !== "nowPlaying") {
             // Ignore audioVisualizer or other message types in this basic example.
             return;
           }
 
-          updateNowPlaying(nowPlaying);
+          updateNowPlaying(message);
         } catch (error) {
           log(`Invalid JSON message: ${error}`);
         }

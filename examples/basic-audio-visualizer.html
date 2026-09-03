@@ -166,12 +166,21 @@
       <button id="clearBtn">Clear Logs</button>
       <span class="badge">ws://localhost:27871/</span>
       <span id="wsState" class="status">State: IDLE</span>
+      <span id="schemaBadge" class="status">schema: -</span>
     </div>
 
     <div class="metrics">
       <div class="metric">
         <div class="label">Volume</div>
         <div class="value" id="volumeValue">0</div>
+      </div>
+      <div class="metric">
+        <div class="label">Volume L</div>
+        <div class="value" id="volumeLeftValue">0</div>
+      </div>
+      <div class="metric">
+        <div class="label">Volume R</div>
+        <div class="value" id="volumeRightValue">0</div>
       </div>
       <div class="metric">
         <div class="label">Bass</div>
@@ -251,20 +260,28 @@
     const avStatus = document.getElementById("avStatus");
 
     const volumeValue = document.getElementById("volumeValue");
+    const volumeLeftValue = document.getElementById("volumeLeftValue");
+    const volumeRightValue = document.getElementById("volumeRightValue");
     const bassValue = document.getElementById("bassValue");
     const midValue = document.getElementById("midValue");
     const trebleValue = document.getElementById("trebleValue");
+    const schemaBadge = document.getElementById("schemaBadge");
 
     let ws = null;
     let reconnectTimer = null;
     let manualClose = false;
 
+    // 16 log-spaced bars is schemaVersion 1's current shape (see
+    // docs/nzxt-esc-client-reference.md §6) — the smoothing loop in animate() below sizes off
+    // whatever length actually arrives, this initial array is just a reasonable starting point.
     const latest = {
       volume: 0,
+      volumeLeft: 0,
+      volumeRight: 0,
       bass: 0,
       mid: 0,
       treble: 0,
-      spectrum: Array(10).fill(0)
+      spectrum: Array(16).fill(0)
     };
 
     const smooth = {
@@ -272,7 +289,7 @@
       bass: 0,
       mid: 0,
       treble: 0,
-      spectrum: Array(10).fill(0)
+      spectrum: Array(16).fill(0)
     };
 
     function resizeCanvas(canvas) {
@@ -341,6 +358,8 @@
 
           if (msg.type === "audioVisualizer") {
             latest.volume = Number(msg.volume || 0);
+            latest.volumeLeft = Number(msg.volumeLeft || 0);
+            latest.volumeRight = Number(msg.volumeRight || 0);
             latest.bass = Number(msg.bass || 0);
             latest.mid = Number(msg.mid || 0);
             latest.treble = Number(msg.treble || 0);
@@ -348,8 +367,11 @@
 
             audioLog.textContent = JSON.stringify(msg, null, 2);
             avStatus.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+            schemaBadge.textContent = `schema: v${msg.schemaVersion ?? "?"} (${msg.appVersion ?? "-"})`;
 
             volumeValue.textContent = latest.volume;
+            volumeLeftValue.textContent = latest.volumeLeft;
+            volumeRightValue.textContent = latest.volumeRight;
             bassValue.textContent = latest.bass;
             midValue.textContent = latest.mid;
             trebleValue.textContent = latest.treble;

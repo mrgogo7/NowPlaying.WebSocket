@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NowPlaying.WebSocket Calibration Lab</title>
+<style>
+  :root{
+    --bg:#070b16;--panel:rgba(18,26,47,.86);--border:rgba(140,170,240,.18);
+    --text:#e5ecff;--muted:#93a4c3;--cyan:#7dd3fc;--purple:#c084fc;--green:#4ade80;
+    --warn:#f59e0b;--err:#f87171;--bass:#f472b6;--mid:#7dd3fc;--treble:#facc15;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;min-height:100vh;color:var(--text);font-family:Segoe UI,Arial,sans-serif;
+    background:radial-gradient(circle at top left,rgba(125,211,252,.18),transparent 34%),
+               radial-gradient(circle at bottom right,rgba(192,132,252,.15),transparent 38%),var(--bg);
+  }
+  .wrap{padding:16px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;max-width:1400px;margin:0 auto}
+  .top,.settings,.metrics,.log,.note{grid-column:1/-1}
+  .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  button{border:1px solid var(--border);background:rgba(26,38,66,.9);color:var(--text);padding:7px 12px;border-radius:10px;cursor:pointer}
+  button:hover{background:rgba(38,52,86,.9)}
+  .endpoint{color:var(--warn);font-family:Consolas,monospace;font-size:13px}
+  .status{color:var(--muted);font-size:13px}.ok{color:var(--green)}.err{color:var(--err)}
+  .note{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:12px 16px;color:var(--muted);font-size:12.5px;line-height:1.5}
+  .note b{color:var(--text)}
+  .settings{background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:14px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+  .setting{background:rgba(10,15,30,.76);border:1px solid var(--border);border-radius:14px;padding:12px}
+  .setting label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px}
+  .setting span{color:var(--cyan);font-family:Consolas,monospace}
+  input[type=range]{width:100%;accent-color:var(--cyan)}
+  .hint{color:var(--muted);font-size:11px;line-height:1.35;margin-top:6px}
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .metric,.card{background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:14px;box-shadow:0 18px 45px rgba(0,0,0,.28)}
+  .metric .label{color:var(--muted);font-size:12px}
+  .metric .pair{display:flex;align-items:baseline;gap:8px;margin-top:2px}
+  .metric .raw{font-size:14px;color:var(--muted);font-family:Consolas,monospace}
+  .metric .arrow{color:var(--muted);font-size:12px}
+  .metric .shaped{font-size:24px;font-weight:700;font-family:Consolas,monospace}
+  .card{min-height:230px;display:flex;flex-direction:column;gap:8px}
+  .card h2{margin:0;font-size:15px}.sub{color:var(--muted);font-size:12px}
+  canvas{width:100%;height:170px;display:block;border-radius:14px;background:rgba(5,9,20,.55)}
+  pre{margin:0;white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:11.5px;max-height:220px;overflow:auto}
+
+  .stereo-wrap{display:flex;gap:14px;align-items:flex-end;height:100px;justify-content:center}
+  .stereo-col{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .stereo-track{width:30px;height:76px;border-radius:8px;background:rgba(255,255,255,.06);position:relative;overflow:hidden}
+  .stereo-fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(0deg,var(--cyan),var(--purple));height:0%}
+  .stereo-label{font-size:11px;color:var(--muted)}
+
+  @media(max-width:1100px){.settings{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:980px){.wrap{grid-template-columns:1fr}}
+  @media(max-width:600px){.settings{grid-template-columns:repeat(2,1fr)}.metrics{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <button id="connectBtn">Connect</button>
+    <button id="disconnectBtn">Disconnect</button>
+    <span class="endpoint">ws://localhost:27871/</span>
+    <span id="wsState" class="status">State: IDLE</span>
+  </div>
+
+  <div class="note">
+    Bu sayfa <b>ham WebSocket verisini değiştirmez</b> — NowPlaying.WebSocket'in kendisi zaten ham,
+    işlenmemiş değerler yayınlıyor (bkz. <code>docs/ai-development-context.md</code>, "adapter emits raw values").
+    Aşağıdaki kaydırıcılar, bir tüketicinin (ör. NZXT-ESC'nin kendi <code>advanced-plus-audio-visualizer.html</code>
+    referansındaki) uygulayabileceği <b>istemci tarafı</b> son işleme adımlarını simüle eder: Floor Cut → Auto Gain
+    → Response Curve → Sensitivity → Peak Punch → (Bass/Mid/Treble Weight) → Attack/Release. Amaç: sunucu
+    tarafındaki FFT kalibrasyonunun (<code>SpectrumAnalyzer.cs</code>, <code>MagnitudeCeiling</code> ve tilt üsteli)
+    yeterli dinamik aralığa sahip olup olmadığını, gerçek bir tüketicinin nasıl bir sonuç üreteceğini görerek
+    değerlendirmek. Sol taraftaki "raw" değerler her zaman telden geldiği gibidir; sağdaki büyük sayı, kaydırıcıları
+    uyguladıktan sonraki hâlidir.
+  </div>
+
+  <section class="settings">
+    <div class="setting"><label>Sensitivity <span id="sensitivityValue"></span></label><input id="sensitivity" type="range" min="0.5" max="8" step="0.05" value="1"><div class="hint">Genel tepki çarpanı.</div></div>
+    <div class="setting"><label>Auto Gain <span id="autoGainValue"></span></label><input id="autoGain" type="range" min="0" max="1" step="0.01" value="1"><div class="hint">Sesin gerçek çalışma aralığını öğrenip dar aralığı 0-100'e genişletir.</div></div>
+    <div class="setting"><label>Floor Cut <span id="floorValue"></span></label><input id="floor" type="range" min="0" max="35" step="1" value="35"><div class="hint">Düşük seviye gürültüyü/tabanı keser.</div></div>
+    <div class="setting"><label>Peak Punch <span id="punchValue"></span></label><input id="punch" type="range" min="0" max="3" step="0.05" value="2.5"><div class="hint">Ani yükselişleri (vuruş/beat) görselde büyütür.</div></div>
+    <div class="setting"><label>Response Curve <span id="curveValue"></span></label><input id="curve" type="range" min="0.25" max="1.8" step="0.01" value="1"><div class="hint">1'den küçük: küçük farkları büyütür. 1'den büyük: sadece güçlü sinyalleri gösterir.</div></div>
+    <div class="setting"><label>Attack <span id="attackValue"></span></label><input id="attack" type="range" min="0.05" max="0.95" step="0.01" value="0.95"><div class="hint">Yükselirken tepki hızı (1 = anlık).</div></div>
+    <div class="setting"><label>Release <span id="releaseValue"></span></label><input id="release" type="range" min="0.02" max="0.6" step="0.01" value="0.6"><div class="hint">Düşerken sönme hızı (düşük = daha uzun kuyruk).</div></div>
+    <div class="setting"><label>Bass Weight <span id="bassWeightValue"></span></label><input id="bassWeight" type="range" min="0.25" max="3" step="0.05" value="1"><div class="hint">Bass alanı + spectrum'un ~250Hz altı çubukları.</div></div>
+    <div class="setting"><label>Mid Weight <span id="midWeightValue"></span></label><input id="midWeight" type="range" min="0.25" max="3" step="0.05" value="1"><div class="hint">Mid alanı + spectrum'un 250Hz-4kHz çubukları.</div></div>
+    <div class="setting"><label>Treble Weight <span id="trebleWeightValue"></span></label><input id="trebleWeight" type="range" min="0.25" max="3" step="0.05" value="1"><div class="hint">Treble alanı + spectrum'un 4kHz üstü çubukları.</div></div>
+  </section>
+
+  <div class="metrics">
+    <div class="metric"><div class="label">Volume <span id="rawVolume" class="raw"></span></div><div class="pair"><span class="arrow">→</span><span class="shaped" id="shapedVolume" style="color:var(--green)">0</span></div></div>
+    <div class="metric"><div class="label">Bass <span id="rawBass" class="raw"></span></div><div class="pair"><span class="arrow">→</span><span class="shaped" id="shapedBass" style="color:var(--bass)">0</span></div></div>
+    <div class="metric"><div class="label">Mid <span id="rawMid" class="raw"></span></div><div class="pair"><span class="arrow">→</span><span class="shaped" id="shapedMid" style="color:var(--mid)">0</span></div></div>
+    <div class="metric"><div class="label">Treble <span id="rawTreble" class="raw"></span></div><div class="pair"><span class="arrow">→</span><span class="shaped" id="shapedTreble" style="color:var(--treble)">0</span></div></div>
+  </div>
+
+  <section class="card">
+    <h2>Stereo Volume (raw)</h2>
+    <div class="sub">volumeLeft / volumeRight — hiç işlenmemiş</div>
+    <div class="stereo-wrap">
+      <div class="stereo-col"><div class="stereo-track"><div class="stereo-fill" id="mVolumeLeft"></div></div><span class="stereo-label" id="vVolumeLeft">L: 0</span></div>
+      <div class="stereo-col"><div class="stereo-track"><div class="stereo-fill" id="mVolumeRight"></div></div><span class="stereo-label" id="vVolumeRight">R: 0</span></div>
+    </div>
+  </section>
+
+  <section class="card"><h2>Raw JSON</h2><div class="sub" id="avStatus">Waiting...</div><pre id="audioLog">{}</pre></section>
+
+  <section class="card"><h2>Shaped Bars</h2><div class="sub">Floor Cut + Auto Gain + Peak Punch + band weights</div><canvas id="barsCanvas"></canvas></section>
+  <section class="card"><h2>Mirror</h2><div class="sub">Ani vuruşları belirginleştirir</div><canvas id="mirrorCanvas"></canvas></section>
+  <section class="card"><h2>Radial</h2><div class="sub">16 log-aralıklı bant, dairesel</div><canvas id="radialCanvas"></canvas></section>
+  <section class="card"><h2>Orb</h2><div class="sub">Bass + peak etkili organic şekil</div><canvas id="orbCanvas"></canvas></section>
+
+  <section class="card log"><h2>Connection Log</h2><pre id="connLog"></pre></section>
+</div>
+
+<script>
+const WS_URL = "ws://localhost:27871/";
+const RECONNECT_MS = 1500;
+const SPECTRUM_BAR_COUNT = 16;
+const MIN_HZ = 20, MAX_HZ = 20000, BASS_MAX_HZ = 250, MID_MAX_HZ = 4000;
+
+const canvases = {
+  bars: document.getElementById("barsCanvas"),
+  mirror: document.getElementById("mirrorCanvas"),
+  radial: document.getElementById("radialCanvas"),
+  orb: document.getElementById("orbCanvas")
+};
+const ctx = Object.fromEntries(Object.entries(canvases).map(([k, c]) => [k, c.getContext("2d")]));
+
+const inputs = {
+  sensitivity: document.getElementById("sensitivity"),
+  autoGain: document.getElementById("autoGain"),
+  floor: document.getElementById("floor"),
+  punch: document.getElementById("punch"),
+  curve: document.getElementById("curve"),
+  attack: document.getElementById("attack"),
+  release: document.getElementById("release"),
+  bassWeight: document.getElementById("bassWeight"),
+  midWeight: document.getElementById("midWeight"),
+  trebleWeight: document.getElementById("trebleWeight")
+};
+
+let ws = null, reconnectTimer = null, manualClose = false, tick = 0;
+
+const latest = { volume: 0, bass: 0, mid: 0, treble: 0, spectrum: Array(SPECTRUM_BAR_COUNT).fill(0) };
+const smooth = { volume: 0, bass: 0, mid: 0, treble: 0, spectrum: Array(SPECTRUM_BAR_COUNT).fill(0) };
+const adaptive = { avgPeak: 22, lastSpectrum: Array(SPECTRUM_BAR_COUNT).fill(0), lastScalar: { volume: 0, bass: 0, mid: 0, treble: 0 } };
+
+function s() {
+  return {
+    sensitivity: Number(inputs.sensitivity.value),
+    autoGain: Number(inputs.autoGain.value),
+    floor: Number(inputs.floor.value),
+    punch: Number(inputs.punch.value),
+    curve: Number(inputs.curve.value),
+    attack: Number(inputs.attack.value),
+    release: Number(inputs.release.value),
+    bassWeight: Number(inputs.bassWeight.value),
+    midWeight: Number(inputs.midWeight.value),
+    trebleWeight: Number(inputs.trebleWeight.value)
+  };
+}
+
+function updateLabels() {
+  const v = s();
+  document.getElementById("sensitivityValue").textContent = `${v.sensitivity.toFixed(2)}x`;
+  document.getElementById("autoGainValue").textContent = `${Math.round(v.autoGain * 100)}%`;
+  document.getElementById("floorValue").textContent = v.floor;
+  document.getElementById("punchValue").textContent = `${v.punch.toFixed(2)}x`;
+  document.getElementById("curveValue").textContent = v.curve.toFixed(2);
+  document.getElementById("attackValue").textContent = v.attack.toFixed(2);
+  document.getElementById("releaseValue").textContent = v.release.toFixed(2);
+  document.getElementById("bassWeightValue").textContent = `${v.bassWeight.toFixed(2)}x`;
+  document.getElementById("midWeightValue").textContent = `${v.midWeight.toFixed(2)}x`;
+  document.getElementById("trebleWeightValue").textContent = `${v.trebleWeight.toFixed(2)}x`;
+}
+Object.values(inputs).forEach((i) => i.addEventListener("input", updateLabels));
+updateLabels();
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// Mirrors SpectrumAnalyzer.cs's log-spaced band edges (20Hz-20kHz over 16 bars) so this lab's
+// per-bar weighting lines up with the same Bass/Mid/Treble boundaries the server actually uses.
+function barCenterHz(i) {
+  const logMin = Math.log(MIN_HZ), logMax = Math.log(MAX_HZ);
+  const lowHz = Math.exp(logMin + (i / SPECTRUM_BAR_COUNT) * (logMax - logMin));
+  const highHz = Math.exp(logMin + ((i + 1) / SPECTRUM_BAR_COUNT) * (logMax - logMin));
+  return Math.sqrt(lowHz * highHz);
+}
+function bandWeightForHz(hz, cfg) {
+  if (hz <= BASS_MAX_HZ) return cfg.bassWeight;
+  if (hz <= MID_MAX_HZ) return cfg.midWeight;
+  return cfg.trebleWeight;
+}
+const barWeights = Array.from({ length: SPECTRUM_BAR_COUNT }, (_, i) => barCenterHz(i));
+
+function resizeCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const r = canvas.getBoundingClientRect();
+  const w = Math.max(1, Math.floor(r.width * dpr));
+  const h = Math.max(1, Math.floor(r.height * dpr));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+}
+function resizeAll() { Object.values(canvases).forEach(resizeCanvas); }
+window.addEventListener("resize", resizeAll);
+resizeAll();
+
+function appendConn(text, level) {
+  const connLog = document.getElementById("connLog");
+  const wsState = document.getElementById("wsState");
+  connLog.textContent += `[${new Date().toLocaleTimeString()}] ${text}\n`;
+  connLog.scrollTop = connLog.scrollHeight;
+  if (level === "ok") { wsState.textContent = "State: CONNECTED"; wsState.className = "status ok"; }
+  else if (level === "err") { wsState.textContent = "State: ERROR/CLOSED"; wsState.className = "status err"; }
+  else if (text.startsWith("CONNECTING")) { wsState.textContent = "State: CONNECTING"; wsState.className = "status"; }
+}
+function scheduleReconnect() {
+  if (manualClose || reconnectTimer) return;
+  reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, RECONNECT_MS);
+}
+function connect() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  manualClose = false;
+  appendConn(`CONNECTING -> ${WS_URL}`);
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => appendConn("CONNECTED", "ok");
+  ws.onerror = () => appendConn("ERROR", "err");
+  ws.onclose = (e) => { appendConn(`CLOSED code=${e.code} reason=${e.reason || "-"}`, "err"); scheduleReconnect(); };
+  ws.onmessage = (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { appendConn("Invalid JSON message"); return; }
+    if (msg.type !== "audioVisualizer") return;
+
+    latest.volume = Number(msg.volume || 0);
+    latest.bass = Number(msg.bass || 0);
+    latest.mid = Number(msg.mid || 0);
+    latest.treble = Number(msg.treble || 0);
+    latest.spectrum = Array.isArray(msg.spectrum) ? msg.spectrum.map((v) => Number(v || 0)) : latest.spectrum;
+
+    document.getElementById("audioLog").textContent = JSON.stringify(msg, null, 2);
+    document.getElementById("avStatus").textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+    document.getElementById("rawVolume").textContent = `raw ${latest.volume}`;
+    document.getElementById("rawBass").textContent = `raw ${latest.bass}`;
+    document.getElementById("rawMid").textContent = `raw ${latest.mid}`;
+    document.getElementById("rawTreble").textContent = `raw ${latest.treble}`;
+
+    const vl = Number(msg.volumeLeft || 0), vr = Number(msg.volumeRight || 0);
+    document.getElementById("mVolumeLeft").style.height = `${clamp(vl, 0, 100)}%`;
+    document.getElementById("vVolumeLeft").textContent = `L: ${Math.round(vl)}`;
+    document.getElementById("mVolumeRight").style.height = `${clamp(vr, 0, 100)}%`;
+    document.getElementById("vVolumeRight").textContent = `R: ${Math.round(vr)}`;
+  };
+}
+function disconnect() {
+  manualClose = true;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (ws) ws.close(1000, "Manual close");
+  ws = null;
+  document.getElementById("wsState").textContent = "State: DISCONNECTED";
+  document.getElementById("wsState").className = "status";
+}
+
+/*
+  Same pipeline as NZXT-ESC's own docs/examples/advanced-plus-audio-visualizer.html reference:
+  1) Floor Cut removes the noise floor.
+  2) A slow-moving average of the recent peak learns the track's real working range.
+  3) Auto Gain blends between "no gain" and "normalize that range to 100".
+  4) Response Curve (power function) reshapes small vs. large differences.
+  5) Sensitivity is an overall multiplier.
+  6) Peak Punch adds an extra boost proportional to how much the value just jumped.
+  7) A band weight (Bass/Mid/Treble) is applied last, keyed off each bar's real center frequency.
+*/
+function adaptiveShape(value, previous, weight) {
+  const cfg = s();
+  const v = Math.max(0, value - cfg.floor);
+  const livePeak = Math.max(...smooth.spectrum, smooth.bass, smooth.mid, smooth.treble, 1);
+  adaptive.avgPeak = lerp(adaptive.avgPeak, livePeak, 0.015);
+  const targetPeak = Math.max(8, adaptive.avgPeak - cfg.floor);
+  const autoMultiplier = lerp(1, 100 / targetPeak, cfg.autoGain);
+
+  let normalized = clamp((v * autoMultiplier) / 100, 0, 1);
+  normalized = Math.pow(normalized, cfg.curve);
+
+  let shaped = normalized * 100 * cfg.sensitivity;
+  const delta = Math.max(0, value - previous);
+  shaped += delta * cfg.punch * 1.8;
+  shaped *= weight;
+
+  return clamp(shaped, 0, 100);
+}
+
+function shapedSpectrum() {
+  const cfg = s();
+  return smooth.spectrum.map((v, i) => {
+    const shaped = adaptiveShape(v, adaptive.lastSpectrum[i] || 0, bandWeightForHz(barWeights[i], cfg));
+    adaptive.lastSpectrum[i] = v;
+    return shaped;
+  });
+}
+
+function shapedScalar(name, weight) {
+  const shaped = adaptiveShape(smooth[name], adaptive.lastScalar[name] || 0, weight);
+  adaptive.lastScalar[name] = smooth[name];
+  return shaped;
+}
+
+function clear(c, canvas) { c.clearRect(0, 0, canvas.width, canvas.height); }
+function gradient(c, canvas) {
+  const g = c.createLinearGradient(0, 0, canvas.width, canvas.height);
+  g.addColorStop(0, "#f472b6"); g.addColorStop(0.5, "#7dd3fc"); g.addColorStop(1, "#facc15");
+  return g;
+}
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y); c.lineTo(x + w - r, y); c.quadraticCurveTo(x + w, y, x + w, y + r);
+  c.lineTo(x + w, y + h - r); c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  c.lineTo(x + r, y + h); c.quadraticCurveTo(x, y + h, x, y + h - r);
+  c.lineTo(x, y + r); c.quadraticCurveTo(x, y, x + r, y); c.closePath();
+}
+
+function drawBars(v) {
+  const canvas = canvases.bars, c = ctx.bars;
+  clear(c, canvas);
+  const gap = canvas.width * 0.018;
+  const bw = (canvas.width - gap * (v.length + 1)) / v.length;
+  const maxH = canvas.height * 0.78, baseY = canvas.height * 0.88;
+  c.fillStyle = gradient(c, canvas); c.shadowColor = "rgba(125,211,252,.6)"; c.shadowBlur = 18;
+  v.forEach((val, i) => {
+    const h = Math.max(5, (val / 100) * maxH);
+    const x = gap + i * (bw + gap);
+    roundRect(c, x, baseY - h, bw, h, Math.min(12, bw / 2)); c.fill();
+  });
+  c.shadowBlur = 0;
+}
+function drawMirror(v) {
+  const canvas = canvases.mirror, c = ctx.mirror;
+  clear(c, canvas);
+  const gap = canvas.width * 0.014;
+  const bw = (canvas.width - gap * (v.length + 1)) / v.length;
+  const centerY = canvas.height / 2, maxH = canvas.height * 0.4;
+  c.fillStyle = gradient(c, canvas); c.shadowColor = "rgba(192,132,252,.55)"; c.shadowBlur = 16;
+  v.forEach((val, i) => {
+    const h = Math.max(4, (val / 100) * maxH);
+    const x = gap + i * (bw + gap);
+    roundRect(c, x, centerY - h, bw, h, 8); c.fill();
+    roundRect(c, x, centerY, bw, h, 8); c.fill();
+  });
+  c.shadowBlur = 0;
+}
+function drawRadial(v) {
+  const canvas = canvases.radial, c = ctx.radial;
+  clear(c, canvas);
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const baseR = Math.min(canvas.width, canvas.height) * 0.2;
+  const maxBar = Math.min(canvas.width, canvas.height) * 0.28;
+  c.strokeStyle = "rgba(255,255,255,.08)"; c.lineWidth = 2;
+  c.beginPath(); c.arc(cx, cy, baseR, 0, Math.PI * 2); c.stroke();
+  v.forEach((val, i) => {
+    const a = (Math.PI * 2 * i) / v.length - Math.PI / 2;
+    const len = 8 + (val / 100) * maxBar;
+    c.strokeStyle = i % 2 ? "#c084fc" : "#7dd3fc"; c.lineWidth = 5; c.lineCap = "round";
+    c.shadowColor = c.strokeStyle; c.shadowBlur = 16;
+    c.beginPath();
+    c.moveTo(cx + Math.cos(a) * baseR, cy + Math.sin(a) * baseR);
+    c.lineTo(cx + Math.cos(a) * (baseR + len), cy + Math.sin(a) * (baseR + len));
+    c.stroke();
+  });
+  c.shadowBlur = 0;
+}
+function drawOrb(v) {
+  const canvas = canvases.orb, c = ctx.orb;
+  clear(c, canvas);
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const baseR = Math.min(canvas.width, canvas.height) * 0.22;
+  c.beginPath();
+  for (let i = 0; i <= 140; i++) {
+    const a = (Math.PI * 2 * i) / 140;
+    const val = v[i % v.length] / 100;
+    const wobble = Math.sin(a * 5 + tick * 0.045) * 8;
+    const r = baseR + val * 58 + wobble;
+    const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+    if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+  }
+  c.closePath();
+  const g = c.createRadialGradient(cx, cy, 10, cx, cy, baseR * 2.6);
+  g.addColorStop(0, "rgba(125,211,252,.70)"); g.addColorStop(0.55, "rgba(192,132,252,.28)"); g.addColorStop(1, "rgba(74,222,128,.04)");
+  c.fillStyle = g; c.strokeStyle = "rgba(125,211,252,.85)"; c.lineWidth = 3;
+  c.shadowColor = "#7dd3fc"; c.shadowBlur = 22;
+  c.fill(); c.stroke(); c.shadowBlur = 0;
+}
+
+function animate() {
+  tick++;
+  const cfg = s();
+  const attackRelease = (current, target) => lerp(current, target, target > current ? cfg.attack : cfg.release);
+
+  smooth.volume = attackRelease(smooth.volume, latest.volume);
+  smooth.bass = attackRelease(smooth.bass, latest.bass);
+  smooth.mid = attackRelease(smooth.mid, latest.mid);
+  smooth.treble = attackRelease(smooth.treble, latest.treble);
+  for (let i = 0; i < SPECTRUM_BAR_COUNT; i++) {
+    smooth.spectrum[i] = attackRelease(smooth.spectrum[i] || 0, latest.spectrum[i] || 0);
+  }
+
+  const shapedV = shapedScalar("volume", 1);
+  const shapedB = shapedScalar("bass", cfg.bassWeight);
+  const shapedM = shapedScalar("mid", cfg.midWeight);
+  const shapedT = shapedScalar("treble", cfg.trebleWeight);
+  document.getElementById("shapedVolume").textContent = Math.round(shapedV);
+  document.getElementById("shapedBass").textContent = Math.round(shapedB);
+  document.getElementById("shapedMid").textContent = Math.round(shapedM);
+  document.getElementById("shapedTreble").textContent = Math.round(shapedT);
+
+  const v = shapedSpectrum();
+  drawBars(v); drawMirror(v); drawRadial(v); drawOrb(v);
+
+  requestAnimationFrame(animate);
+}
+
+document.getElementById("connectBtn").onclick = connect;
+document.getElementById("disconnectBtn").onclick = disconnect;
+
+connect();
+animate();
+</script>
+</body>
+</html>

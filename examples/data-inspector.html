@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NowPlaying.WebSocket Data Inspector</title>
+<style>
+  :root{
+    --bg:#070b16;--panel:rgba(18,26,47,.86);--border:rgba(140,170,240,.18);
+    --text:#e5ecff;--muted:#93a4c3;--cyan:#7dd3fc;--purple:#c084fc;--green:#4ade80;
+    --warn:#f59e0b;--err:#f87171;--bass:#f472b6;--mid:#7dd3fc;--treble:#facc15;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;min-height:100vh;color:var(--text);font-family:Segoe UI,Arial,sans-serif;
+    background:radial-gradient(circle at top left,rgba(125,211,252,.18),transparent 34%),
+               radial-gradient(circle at bottom right,rgba(192,132,252,.15),transparent 38%),var(--bg);
+  }
+  .wrap{padding:16px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;max-width:1400px;margin:0 auto}
+  .top,.log{grid-column:1/-1}
+  .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  button{border:1px solid var(--border);background:rgba(26,38,66,.9);color:var(--text);padding:7px 12px;border-radius:10px;cursor:pointer}
+  button:hover{background:rgba(38,52,86,.9)}
+  .endpoint{color:var(--warn);font-family:Consolas,monospace;font-size:13px}
+  .status{color:var(--muted);font-size:13px}.ok{color:var(--green)}.err{color:var(--err)}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:16px;box-shadow:0 18px 45px rgba(0,0,0,.28)}
+  .card h2{margin:0 0 4px;font-size:16px;display:flex;justify-content:space-between;align-items:baseline}
+  .card h2 .age{font-size:11px;color:var(--muted);font-weight:400;font-family:Consolas,monospace}
+  .sub{color:var(--muted);font-size:12px;margin-bottom:10px}
+
+  .np-body{display:flex;gap:14px}
+  .art{width:110px;height:110px;border-radius:14px;object-fit:cover;background:rgba(255,255,255,.06);border:1px solid var(--border);flex-shrink:0}
+  .np-meta{flex:1;min-width:0}
+  .title{font-size:17px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .artist{color:var(--muted);font-size:13px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .album{color:var(--muted);font-size:12px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  .progress-row{display:flex;align-items:center;gap:8px;margin-top:10px;font-family:Consolas,monospace;font-size:12px;color:var(--muted)}
+  .progress-track{flex:1;height:6px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden}
+  .progress-fill{height:100%;background:linear-gradient(90deg,var(--cyan),var(--purple));width:0%;transition:width .15s linear}
+
+  .badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .badge{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,.04);font-family:Consolas,monospace}
+  .badge.on{border-color:rgba(74,222,128,.5);color:var(--green)}
+  .badge.off{border-color:rgba(248,113,113,.5);color:var(--err)}
+  .badge.info{border-color:rgba(125,211,252,.5);color:var(--cyan)}
+
+  .meta-row{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--muted);font-family:Consolas,monospace}
+
+  .meter-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .meter-label{width:64px;font-size:12px;color:var(--muted);flex-shrink:0}
+  .meter-track{flex:1;height:14px;border-radius:8px;background:rgba(255,255,255,.06);overflow:hidden;position:relative}
+  .meter-fill{height:100%;border-radius:8px;width:0%;transition:width .08s linear}
+  .meter-value{width:34px;text-align:right;font-family:Consolas,monospace;font-size:12px;flex-shrink:0}
+
+  .stereo-wrap{display:flex;gap:14px;align-items:flex-end;height:120px;margin-bottom:10px;justify-content:center}
+  .stereo-col{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .stereo-track{width:34px;height:90px;border-radius:8px;background:rgba(255,255,255,.06);position:relative;overflow:hidden}
+  .stereo-fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(0deg,var(--cyan),var(--purple));height:0%;transition:height .08s linear}
+  .stereo-label{font-size:11px;color:var(--muted)}
+  .stereo-value{font-family:Consolas,monospace;font-size:12px}
+
+  canvas{width:100%;height:150px;display:block;border-radius:14px;background:rgba(5,9,20,.55);margin-top:6px}
+  pre{margin:0;white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:11.5px;max-height:260px;overflow:auto;background:rgba(5,9,20,.5);border-radius:10px;padding:10px}
+  @media(max-width:980px){.wrap{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <button id="connectBtn">Connect</button>
+    <button id="disconnectBtn">Disconnect</button>
+    <span class="endpoint">ws://localhost:27871/</span>
+    <span id="wsState" class="status">State: IDLE</span>
+  </div>
+
+  <section class="card">
+    <h2>nowPlaying <span class="age" id="npAge"></span></h2>
+    <div class="sub">Now-playing metadata + timeline trust state</div>
+    <div class="np-body">
+      <img class="art" id="albumArt" alt="album art" />
+      <div class="np-meta">
+        <div class="title" id="npTitle">-</div>
+        <div class="artist" id="npArtist">-</div>
+        <div class="album" id="npAlbum">-</div>
+        <div class="progress-row">
+          <span id="posText">-</span>
+          <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+          <span id="durText">-</span>
+        </div>
+        <div class="badges">
+          <span class="badge" id="npPlayback">-</span>
+          <span class="badge" id="npIsPlaying">-</span>
+          <span class="badge info" id="npTimelineVisible">-</span>
+          <span class="badge info" id="npTimelineState">-</span>
+          <span class="badge info" id="npTimelineReason">-</span>
+        </div>
+        <div class="meta-row">
+          <span>schemaVersion: <b id="npSchemaVersion">-</b></span>
+          <span>appVersion: <b id="npAppVersion">-</b></span>
+          <span>updatedAt: <b id="npUpdatedAt">-</b></span>
+        </div>
+      </div>
+    </div>
+    <details style="margin-top:10px"><summary style="cursor:pointer;color:var(--muted);font-size:12px">Raw JSON</summary><pre id="npJson">{}</pre></details>
+  </section>
+
+  <section class="card">
+    <h2>audioVisualizer <span class="age" id="avAge"></span></h2>
+    <div class="sub">Raw wire values — no client-side smoothing or shaping applied</div>
+
+    <div class="meter-row">
+      <span class="meter-label">Volume</span>
+      <div class="meter-track"><div class="meter-fill" id="mVolume" style="background:var(--green)"></div></div>
+      <span class="meter-value" id="vVolume">0</span>
+    </div>
+
+    <div class="stereo-wrap">
+      <div class="stereo-col">
+        <div class="stereo-track"><div class="stereo-fill" id="mVolumeLeft"></div></div>
+        <span class="stereo-label">L</span>
+        <span class="stereo-value" id="vVolumeLeft">0</span>
+      </div>
+      <div class="stereo-col">
+        <div class="stereo-track"><div class="stereo-fill" id="mVolumeRight"></div></div>
+        <span class="stereo-label">R</span>
+        <span class="stereo-value" id="vVolumeRight">0</span>
+      </div>
+    </div>
+
+    <div class="meter-row">
+      <span class="meter-label">Bass</span>
+      <div class="meter-track"><div class="meter-fill" id="mBass" style="background:var(--bass)"></div></div>
+      <span class="meter-value" id="vBass">0</span>
+    </div>
+    <div class="meter-row">
+      <span class="meter-label">Mid</span>
+      <div class="meter-track"><div class="meter-fill" id="mMid" style="background:var(--mid)"></div></div>
+      <span class="meter-value" id="vMid">0</span>
+    </div>
+    <div class="meter-row">
+      <span class="meter-label">Treble</span>
+      <div class="meter-track"><div class="meter-fill" id="mTreble" style="background:var(--treble)"></div></div>
+      <span class="meter-value" id="vTreble">0</span>
+    </div>
+
+    <canvas id="spectrumCanvas"></canvas>
+
+    <div class="meta-row">
+      <span>schemaVersion: <b id="avSchemaVersion">-</b></span>
+      <span>appVersion: <b id="avAppVersion">-</b></span>
+      <span>updatedAt: <b id="avUpdatedAt">-</b></span>
+    </div>
+    <details style="margin-top:10px"><summary style="cursor:pointer;color:var(--muted);font-size:12px">Raw JSON</summary><pre id="avJson">{}</pre></details>
+  </section>
+
+  <section class="card log">
+    <h2>Connection Log</h2>
+    <pre id="connLog"></pre>
+  </section>
+</div>
+
+<script>
+const WS_URL = "ws://localhost:27871/";
+const ALBUM_ART_URL = "http://localhost:27871/album-art";
+const RECONNECT_MS = 1500;
+
+let ws = null;
+let reconnectTimer = null;
+let manualClose = false;
+let lastNpTime = 0;
+let lastAvTime = 0;
+let lastTrackKey = "";
+let albumArtVersion = 0;
+
+function appendConn(text, level) {
+  const connLog = document.getElementById("connLog");
+  const wsState = document.getElementById("wsState");
+  connLog.textContent += `[${new Date().toLocaleTimeString()}] ${text}\n`;
+  connLog.scrollTop = connLog.scrollHeight;
+  if (level === "ok") { wsState.textContent = "State: CONNECTED"; wsState.className = "status ok"; }
+  else if (level === "err") { wsState.textContent = "State: ERROR/CLOSED"; wsState.className = "status err"; }
+  else if (text.startsWith("CONNECTING")) { wsState.textContent = "State: CONNECTING"; wsState.className = "status"; }
+}
+
+function scheduleReconnect() {
+  if (manualClose || reconnectTimer) return;
+  reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, RECONNECT_MS);
+}
+
+function connect() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  manualClose = false;
+  appendConn(`CONNECTING -> ${WS_URL}`);
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => appendConn("CONNECTED", "ok");
+  ws.onerror = () => appendConn("ERROR", "err");
+  ws.onclose = (e) => { appendConn(`CLOSED code=${e.code} reason=${e.reason || "-"}`, "err"); scheduleReconnect(); };
+  ws.onmessage = (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { appendConn("Invalid JSON message"); return; }
+    if (msg.type === "nowPlaying") handleNowPlaying(msg);
+    else if (msg.type === "audioVisualizer") handleAudioVisualizer(msg);
+  };
+}
+
+function disconnect() {
+  manualClose = true;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (ws) ws.close(1000, "Manual close");
+  ws = null;
+  document.getElementById("wsState").textContent = "State: DISCONNECTED";
+  document.getElementById("wsState").className = "status";
+}
+
+function meaningful(s) { return Boolean(s && s !== "-"); }
+
+function formatAge(ms) {
+  if (!ms) return "";
+  const sec = Math.max(0, (Date.now() - ms) / 1000);
+  return sec < 1 ? "now" : `${sec.toFixed(1)}s ago`;
+}
+
+function setBadge(el, text, cls) {
+  el.textContent = text;
+  el.className = "badge" + (cls ? " " + cls : "");
+}
+
+function handleNowPlaying(msg) {
+  lastNpTime = Date.now();
+  document.getElementById("npJson").textContent = JSON.stringify(msg, null, 2);
+
+  document.getElementById("npTitle").textContent = meaningful(msg.title) ? msg.title : "(no title)";
+  document.getElementById("npArtist").textContent = meaningful(msg.artist) ? msg.artist : "(no artist)";
+  document.getElementById("npAlbum").textContent = meaningful(msg.album) ? msg.album : "(no album)";
+
+  const posSec = Number(msg.positionSec || 0);
+  const durSec = Number(msg.durationSec || 0);
+  document.getElementById("posText").textContent = msg.positionText || "-";
+  document.getElementById("durText").textContent = msg.durationText || "-";
+  document.getElementById("progressFill").style.width = durSec > 0 ? `${Math.min(100, (posSec / durSec) * 100)}%` : "0%";
+
+  setBadge(document.getElementById("npPlayback"), msg.playback || "-");
+  setBadge(document.getElementById("npIsPlaying"), msg.isPlaying ? "Playing" : "Not playing", msg.isPlaying ? "on" : "off");
+  setBadge(document.getElementById("npTimelineVisible"), `timeline: ${msg.timelineVisible ? "visible" : "hidden"}`, msg.timelineVisible ? "on" : "off");
+  setBadge(document.getElementById("npTimelineState"), msg.timelineState || "-");
+  setBadge(document.getElementById("npTimelineReason"), msg.timelineReason || "-");
+
+  document.getElementById("npSchemaVersion").textContent = msg.schemaVersion ?? "-";
+  document.getElementById("npAppVersion").textContent = msg.appVersion ?? "-";
+  document.getElementById("npUpdatedAt").textContent = msg.updatedAt ?? "-";
+
+  // Reload album art only when the track actually changes, per the integration contract
+  // (avoid unnecessary HTTP requests on every message tick).
+  const trackKey = `${msg.title}|${msg.artist}|${msg.album}`;
+  const art = document.getElementById("albumArt");
+  if (!meaningful(msg.albumArtUrl)) {
+    art.removeAttribute("src");
+  } else if (trackKey !== lastTrackKey) {
+    lastTrackKey = trackKey;
+    albumArtVersion++;
+    art.src = `${msg.albumArtUrl}?v=${albumArtVersion}`;
+  }
+}
+
+function handleAudioVisualizer(msg) {
+  lastAvTime = Date.now();
+  document.getElementById("avJson").textContent = JSON.stringify(msg, null, 2);
+
+  const set = (fillId, valueId, value) => {
+    document.getElementById(fillId).style.width = `${Math.max(0, Math.min(100, value))}%`;
+    document.getElementById(valueId).textContent = Math.round(value);
+  };
+  set("mVolume", "vVolume", msg.volume || 0);
+  set("mBass", "vBass", msg.bass || 0);
+  set("mMid", "vMid", msg.mid || 0);
+  set("mTreble", "vTreble", msg.treble || 0);
+
+  document.getElementById("mVolumeLeft").style.height = `${Math.max(0, Math.min(100, msg.volumeLeft || 0))}%`;
+  document.getElementById("vVolumeLeft").textContent = Math.round(msg.volumeLeft || 0);
+  document.getElementById("mVolumeRight").style.height = `${Math.max(0, Math.min(100, msg.volumeRight || 0))}%`;
+  document.getElementById("vVolumeRight").textContent = Math.round(msg.volumeRight || 0);
+
+  document.getElementById("avSchemaVersion").textContent = msg.schemaVersion ?? "-";
+  document.getElementById("avAppVersion").textContent = msg.appVersion ?? "-";
+  document.getElementById("avUpdatedAt").textContent = msg.updatedAt ?? "-";
+
+  drawSpectrum(Array.isArray(msg.spectrum) ? msg.spectrum : []);
+}
+
+const spectrumCanvas = document.getElementById("spectrumCanvas");
+const spectrumCtx = spectrumCanvas.getContext("2d");
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const r = spectrumCanvas.getBoundingClientRect();
+  const w = Math.max(1, Math.floor(r.width * dpr));
+  const h = Math.max(1, Math.floor(r.height * dpr));
+  if (spectrumCanvas.width !== w || spectrumCanvas.height !== h) {
+    spectrumCanvas.width = w;
+    spectrumCanvas.height = h;
+  }
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+function drawSpectrum(values) {
+  resizeCanvas();
+  const c = spectrumCtx;
+  c.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
+  if (values.length === 0) return;
+
+  const gap = spectrumCanvas.width * 0.012;
+  const bw = (spectrumCanvas.width - gap * (values.length + 1)) / values.length;
+  const maxH = spectrumCanvas.height * 0.85;
+  const baseY = spectrumCanvas.height * 0.94;
+
+  const g = c.createLinearGradient(0, 0, spectrumCanvas.width, 0);
+  g.addColorStop(0, "#f472b6");
+  g.addColorStop(0.5, "#7dd3fc");
+  g.addColorStop(1, "#facc15");
+  c.fillStyle = g;
+
+  values.forEach((val, i) => {
+    const h = Math.max(3, (Math.max(0, Math.min(100, val)) / 100) * maxH);
+    const x = gap + i * (bw + gap);
+    c.fillRect(x, baseY - h, bw, h);
+  });
+}
+
+setInterval(() => {
+  document.getElementById("npAge").textContent = lastNpTime ? formatAge(lastNpTime) : "no data";
+  document.getElementById("avAge").textContent = lastAvTime ? formatAge(lastAvTime) : "no data";
+}, 250);
+
+document.getElementById("connectBtn").onclick = connect;
+document.getElementById("disconnectBtn").onclick = disconnect;
+
+connect();
+</script>
+</body>
+</html>
